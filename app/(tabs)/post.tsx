@@ -20,6 +20,15 @@ const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/web
 const PLATFORMS_POST = ['Instagram', 'Facebook', 'Twitter', 'Snapchat', 'All'];
 const PLATFORMS_REEL = ['Instagram Reels', 'YouTube Shorts', 'TikTok', 'Facebook Reels', 'Snapchat', 'All'];
 
+const SOCIAL_PLATFORMS = [
+  { id: 'instagram', name: 'Instagram', icon: 'https://i.imgur.com/vkcuEzE.png', color: ['#E1306C', '#C13584'] },
+  { id: 'tiktok', name: 'TikTok', icon: 'https://i.imgur.com/K2FKVUP.png', color: ['#000000', '#333333'] },
+  { id: 'youtube', name: 'YouTube', icon: 'https://i.imgur.com/8H35ptZ.png', color: ['#FF0000', '#DC143C'] },
+  { id: 'snapchat', name: 'Snapchat', icon: 'https://i.imgur.com/XF3FRka.png', color: ['#FFFC00', '#FFA500'] },
+  { id: 'twitter', name: 'Twitter', icon: 'https://i.imgur.com/fPOjKNr.png', color: ['#1DA1F2', '#1a8cd8'] },
+  { id: 'facebook', name: 'Facebook', icon: 'https://i.imgur.com/zfY36en.png', color: ['#1877F2', '#0a5fd1'] },
+];
+
 const MIME_EXTENSIONS: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
@@ -212,6 +221,7 @@ export default function PostScreen() {
   const [selectedPosts, setSelectedPosts] = useState<number[]>([]);
   const [confirmedPosts, setConfirmedPosts] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
 
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
@@ -548,6 +558,19 @@ export default function PostScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleTogglePlatform = (platformId: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedPlatforms(prev => {
+      if (prev.includes(platformId)) {
+        return prev.filter(id => id !== platformId);
+      } else {
+        return [...prev, platformId];
+      }
+    });
   };
 
 
@@ -1134,6 +1157,55 @@ export default function PostScreen() {
             </View>
           </LinearGradient>
 
+          {contentType === 'reel' && (
+            <LinearGradient
+              colors={['#8b5cf6', '#7c3aed']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.postOnCard}
+            >
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.labelDark}>Post On</Text>
+                  <View style={styles.labelBadgeOptionalDark}>
+                    <Text style={styles.labelBadgeTextOptionalDark}>Optional</Text>
+                  </View>
+                </View>
+                <View style={styles.platformsGrid}>
+                  {SOCIAL_PLATFORMS.map((platform) => (
+                    <TouchableOpacity
+                      key={platform.id}
+                      activeOpacity={0.7}
+                      onPress={() => handleTogglePlatform(platform.id)}
+                      style={[
+                        styles.platformCheckbox,
+                        selectedPlatforms.includes(platform.id) && styles.platformCheckboxSelected,
+                      ]}
+                    >
+                      <View style={styles.platformCheckboxContent}>
+                        <View style={styles.checkboxIndicator}>
+                          {selectedPlatforms.includes(platform.id) && (
+                            <Check color="#8b5cf6" size={16} strokeWidth={3} />
+                          )}
+                        </View>
+                        <Image
+                          source={{ uri: platform.icon }}
+                          style={styles.platformIcon}
+                        />
+                        <Text style={[
+                          styles.platformName,
+                          selectedPlatforms.includes(platform.id) && styles.platformNameSelected,
+                        ]}>
+                          {platform.name}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </LinearGradient>
+          )}
+
 
           <TouchableOpacity
             style={[
@@ -1357,6 +1429,61 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 20,
     elevation: 10,
+  },
+  postOnCard: {
+    borderRadius: 32,
+    padding: 24,
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  platformsGrid: {
+    gap: 12,
+  },
+  platformCheckbox: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    overflow: 'hidden',
+  },
+  platformCheckboxSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  platformCheckboxContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  checkboxIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  platformIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+  },
+  platformName: {
+    flex: 1,
+    color: 'rgba(0, 0, 0, 0.7)',
+    fontSize: 16,
+    fontFamily: 'Archivo-Bold',
+    letterSpacing: -0.3,
+  },
+  platformNameSelected: {
+    color: '#000000',
   },
   inputGroup: {
     gap: 14,

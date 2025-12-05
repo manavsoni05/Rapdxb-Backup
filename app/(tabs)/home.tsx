@@ -93,7 +93,7 @@ export default function HomeScreen() {
     } catch (err) {
       console.warn('Failed to clear user session', err);
     }
-    router.replace('/sign-up');
+    router.replace('/sign-in');
   };
 
   useEffect(() => {

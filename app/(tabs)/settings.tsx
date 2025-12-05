@@ -8,13 +8,32 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SOCIAL_PLATFORMS = [
-  { id: 'instagram', name: 'Instagram', connected: true, icon: 'https://i.imgur.com/vkcuEzE.png', color: ['#E1306C', '#C13584'] },
-  { id: 'tiktok', name: 'TikTok', connected: true, icon: 'https://i.imgur.com/K2FKVUP.png', color: ['#000000', '#333333'] },
-  { id: 'youtube', name: 'YouTube', connected: true, icon: 'https://i.imgur.com/8H35ptZ.png', color: ['#FF0000', '#DC143C'] },
-  { id: 'snapchat', name: 'Snapchat', connected: true, icon: 'https://i.imgur.com/XF3FRka.png', color: ['#FFFC00', '#FFA500'] },
-  { id: 'twitter', name: 'Twitter', connected: true, icon: 'https://i.imgur.com/fPOjKNr.png', color: ['#1DA1F2', '#1a8cd8'] },
-  { id: 'facebook', name: 'Facebook', connected: true, icon: 'https://i.imgur.com/zfY36en.png', color: ['#1877F2', '#0a5fd1'] },
+  { id: 'instagram', name: 'Instagram', connected: true, icon: 'https://i.imgur.com/vkcuEzE.png', color: ['#E1306C', '#C13584'] as const },
+  { id: 'tiktok', name: 'TikTok', connected: true, icon: 'https://i.imgur.com/K2FKVUP.png', color: ['#000000', '#333333'] as const },
+  { id: 'youtube', name: 'YouTube', connected: true, icon: 'https://i.imgur.com/8H35ptZ.png', color: ['#FF0000', '#DC143C'] as const },
+  { id: 'snapchat', name: 'Snapchat', connected: true, icon: 'https://i.imgur.com/XF3FRka.png', color: ['#FFFC00', '#FFA500'] as const },
+  { id: 'twitter', name: 'Twitter', connected: true, icon: 'https://i.imgur.com/fPOjKNr.png', color: ['#1DA1F2', '#1a8cd8'] as const },
+  { id: 'facebook', name: 'Facebook', connected: true, icon: 'https://i.imgur.com/zfY36en.png', color: ['#1877F2', '#0a5fd1'] as const },
 ];
+
+// Platform endpoints
+const PLATFORM_ENDPOINTS = {
+  instagram: {
+    connect: 'https://n8n-production-0558.up.railway.app/webhook/instagram',
+    checkStatus: 'https://n8n-production-0558.up.railway.app/webhook/check-instagram-status',
+    storageKey: 'instagramConnectedUserId',
+  },
+  tiktok: {
+    connect: 'https://n8n-production-0558.up.railway.app/webhook/tiktok',
+    checkStatus: 'https://n8n-production-0558.up.railway.app/webhook/check-tiktok-status',
+    storageKey: 'tiktokConnectedUserId',
+  },
+  youtube: {
+    connect: 'https://n8n-production-0558.up.railway.app/webhook/youtube',
+    checkStatus: 'https://n8n-production-0558.up.railway.app/webhook/check-youtube-status',
+    storageKey: 'youtubeConnectedUserId',
+  },
+};
 
 const WEBHOOK_URL = 'https://n8n-production-0558.up.railway.app/webhook/f34adde4-1571-4d9f-a210-2d3ff9aa99d3';
 const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-instagram-status';
@@ -29,7 +48,10 @@ export default function SettingsScreen() {
   const [editImage, setEditImage] = useState(profileImage);
   const [refreshing, setRefreshing] = useState(false);
   const [instagramUserId, setInstagramUserId] = useState<string | null>(null);
+  const [tiktokUserId, setTiktokUserId] = useState<string | null>(null);
+  const [youtubeUserId, setYoutubeUserId] = useState<string | null>(null);
   const [showWaitModal, setShowWaitModal] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState<string>('');
 
   const loadInstagramConnection = useCallback(async () => {
     try {
@@ -41,12 +63,32 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  const loadPlatformConnections = useCallback(async () => {
+    try {
+      // Load Instagram
+      const instagramId = await AsyncStorage.getItem(PLATFORM_ENDPOINTS.instagram.storageKey);
+      setInstagramUserId(instagramId);
+      
+      // Load TikTok
+      const tiktokId = await AsyncStorage.getItem(PLATFORM_ENDPOINTS.tiktok.storageKey);
+      setTiktokUserId(tiktokId);
+      
+      // Load YouTube
+      const youtubeId = await AsyncStorage.getItem(PLATFORM_ENDPOINTS.youtube.storageKey);
+      setYoutubeUserId(youtubeId);
+    } catch (error) {
+      console.error('Failed to load platform connections', error);
+    }
+  }, []);
+
   useEffect(() => {
     loadInstagramConnection();
-  }, [loadInstagramConnection]);
+    loadPlatformConnections();
+  }, [loadInstagramConnection, loadPlatformConnections]);
 
   const handlePlatformPress = async (platformId: string) => {
-    if (platformId !== 'instagram') {
+    // Only handle Instagram, TikTok, and YouTube
+    if (!['instagram', 'tiktok', 'youtube'].includes(platformId)) {
       return;
     }
 
@@ -58,13 +100,16 @@ export default function SettingsScreen() {
       const storedUserId = await AsyncStorage.getItem('userId');
 
       if (!storedUserId) {
-        await AsyncStorage.removeItem(INSTAGRAM_STORAGE_KEY);
-        setInstagramUserId(null);
         Alert.alert('Missing Account', 'We could not find your account locally. Please sign in again.');
         return;
       }
 
-      const response = await fetch(WEBHOOK_URL, {
+      const platformConfig = PLATFORM_ENDPOINTS[platformId as keyof typeof PLATFORM_ENDPOINTS];
+      const platformName = platformId.charAt(0).toUpperCase() + platformId.slice(1);
+
+      console.log(`Connecting to ${platformName}...`);
+      
+      const response = await fetch(platformConfig.connect, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -81,18 +126,19 @@ export default function SettingsScreen() {
       const authUrl = authData?.authUrl;
 
       if (!authUrl) {
-        Alert.alert('Connection Error', 'Instagram did not return an authorization link. Please try again later.');
+        Alert.alert('Connection Error', `${platformName} did not return an authorization link. Please try again later.`);
         return;
       }
 
       const canOpen = await Linking.canOpenURL(authUrl);
       if (!canOpen) {
-        Alert.alert('Connection Error', 'This device cannot open the Instagram authorization link.');
+        Alert.alert('Connection Error', `This device cannot open the ${platformName} authorization link.`);
         return;
       }
 
       // Open URL and start polling
       await Linking.openURL(authUrl);
+      setConnectingPlatform(platformName);
       setShowWaitModal(true);
 
       // Polling logic
@@ -102,8 +148,8 @@ export default function SettingsScreen() {
 
       const checkStatus = async () => {
         try {
-          const url = `${CHECK_STATUS_URL}?userId=${storedUserId}`;
-          console.log('Checking Status URL:', url);
+          const url = `${platformConfig.checkStatus}?userId=${storedUserId}`;
+          console.log(`Checking ${platformName} Status URL:`, url);
           
           const statusResponse = await fetch(url, {
             method: 'GET',
@@ -114,7 +160,7 @@ export default function SettingsScreen() {
 
           if (statusResponse.ok) {
             const text = await statusResponse.text();
-            console.log('Check Status Raw Text:', text);
+            console.log(`${platformName} Status Raw Text:`, text);
 
             if (!text) {
               console.log('Empty response received');
@@ -129,22 +175,31 @@ export default function SettingsScreen() {
               return false;
             }
 
-            console.log('Check Status Parsed JSON:', JSON.stringify(statusData));
+            console.log(`${platformName} Status Parsed JSON:`, JSON.stringify(statusData));
             
-            // Expected format: [{ "connected": true, "instagramPostId": "...", "userId": "...", "message": "Instagram connected" }]
             const data = Array.isArray(statusData) ? statusData[0] : statusData;
             console.log('Parsed Data Object:', data);
 
             if (data && data.connected === true) {
-              await AsyncStorage.setItem(INSTAGRAM_STORAGE_KEY, storedUserId);
-              setInstagramUserId(storedUserId);
+              await AsyncStorage.setItem(platformConfig.storageKey, storedUserId);
+              
+              // Update the appropriate state
+              if (platformId === 'instagram') {
+                setInstagramUserId(storedUserId);
+              } else if (platformId === 'tiktok') {
+                setTiktokUserId(storedUserId);
+              } else if (platformId === 'youtube') {
+                setYoutubeUserId(storedUserId);
+              }
+              
               setShowWaitModal(false);
-              Alert.alert('Success', 'Instagram connected successfully!');
+              setConnectingPlatform('');
+              Alert.alert('Success', `${platformName} connected successfully!`);
               return true; // Stop polling
             }
           }
         } catch (err) {
-          console.error('Error checking status:', err);
+          console.error(`Error checking ${platformName} status:`, err);
         }
         return false; // Continue polling
       };
@@ -153,6 +208,7 @@ export default function SettingsScreen() {
         if (Date.now() - startTime > maxDuration) {
           clearInterval(pollId);
           setShowWaitModal(false);
+          setConnectingPlatform('');
           Alert.alert('Timeout', 'Connection check timed out. Please check if you completed the process.');
           return;
         }
@@ -164,17 +220,16 @@ export default function SettingsScreen() {
       }, pollInterval);
 
     } catch (error) {
-      console.error('Failed to notify Instagram webhook', error);
-      Alert.alert('Connection Error', 'We were unable to launch the Instagram authorization link. Please try again later.');
-      await AsyncStorage.removeItem(INSTAGRAM_STORAGE_KEY);
-      setInstagramUserId(null);
+      console.error(`Failed to connect ${platformId}:`, error);
+      Alert.alert('Connection Error', `We were unable to launch the authorization link. Please try again later.`);
       setShowWaitModal(false);
+      setConnectingPlatform('');
     }
   };
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadInstagramConnection().finally(() => {
+    Promise.all([loadInstagramConnection(), loadPlatformConnections()]).finally(() => {
       setRefreshing(false);
     });
   };
@@ -308,9 +363,18 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Connected Accounts</Text>
           <View style={styles.platformsGrid}>
             {SOCIAL_PLATFORMS.map((platform) => {
-              const isInstagram = platform.id === 'instagram';
-              const isConnected = isInstagram && instagramUserId;
+              // Check connection status for each platform
+              let isConnected = false;
+              if (platform.id === 'instagram') {
+                isConnected = !!instagramUserId;
+              } else if (platform.id === 'tiktok') {
+                isConnected = !!tiktokUserId;
+              } else if (platform.id === 'youtube') {
+                isConnected = !!youtubeUserId;
+              }
+              
               const platformStatus = isConnected ? 'Connected' : 'Not connected';
+              const isClickable = ['instagram', 'tiktok', 'youtube'].includes(platform.id);
 
               return (
               <TouchableOpacity
@@ -321,8 +385,8 @@ export default function SettingsScreen() {
                   isConnected && { opacity: 0.8 }
                 ]}
                 activeOpacity={0.8}
-                onPress={() => !isConnected && handlePlatformPress(platform.id)}
-                disabled={!!isConnected}
+                onPress={() => !isConnected && isClickable && handlePlatformPress(platform.id)}
+                disabled={!!isConnected || !isClickable}
               >
                 <LinearGradient
                   colors={platform.color}
@@ -434,7 +498,9 @@ export default function SettingsScreen() {
           <View style={styles.waitModalContent}>
             <ActivityIndicator size="large" color="#60a5fa" />
             <Text style={styles.waitModalText}>Wait for a while...</Text>
-            <Text style={styles.waitModalSubText}>Connecting to Instagram</Text>
+            <Text style={styles.waitModalSubText}>
+              Connecting to {connectingPlatform || 'platform'}
+            </Text>
           </View>
         </View>
       </Modal>

@@ -24,43 +24,78 @@ export default function SignInScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
-
+    
     setLoading(true);
 
     try {
+      console.log('Starting login request...');
       const formData = new FormData();
       formData.append('email', email);
       formData.append('password', password);
 
+      console.log('Sending request to:', LOGIN_API_URL);
       const response = await fetch(LOGIN_API_URL, {
         method: 'POST',
         body: formData,
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
         throw new Error(`Login failed with status ${response.status}`);
       }
 
       const data = await response.json();
+      console.log('Response data:', JSON.stringify(data, null, 2));
       
-      if (data && data.success && data.user) {
+      // Handle different response formats from n8n
+      let userData = null;
+      let isSuccess = false;
+      
+      // Check if response is an array (n8n might return array)
+      if (Array.isArray(data)) {
+        const firstItem = data[0];
+        if (firstItem) {
+          isSuccess = firstItem.success === true;
+          userData = firstItem.user || firstItem;
+        }
+      } else {
+        isSuccess = data.success === true;
+        userData = data.user || data;
+      }
+      
+      console.log('Parsed success:', isSuccess);
+      console.log('User data:', userData);
+      
+      if (isSuccess && userData && (userData._id || userData.id)) {
+        console.log('Login successful, storing user data...');
         // Store user details
-        await AsyncStorage.setItem('userId', data.user._id);
-        await AsyncStorage.setItem('userEmail', data.user.email);
-        if (data.user.name) {
-          await AsyncStorage.setItem('userName', data.user.name);
+        const userId = userData._id || userData.id;
+        const userEmail = userData.email || email;
+        const userName = userData.name || userData.username || '';
+        
+        await AsyncStorage.setItem('userId', userId);
+        await AsyncStorage.setItem('userEmail', userEmail);
+        if (userName) {
+          await AsyncStorage.setItem('userName', userName);
         }
         
         // Check for connected accounts
-        // Using instagramPostId as indicator since it's present in the user's response
-        if (data.user.instagramId || data.user.instagram_id || data.user.instagramPostId) {
-          await AsyncStorage.setItem('instagramConnectedUserId', data.user._id);
+        if (userData.instagramId || userData.instagram_id || userData.instagramPostId) {
+          await AsyncStorage.setItem('instagramConnectedUserId', userId);
         }
         
+        console.log('User data stored successfully');
+        console.log('Redirecting to home...');
+        
         // Manual redirect to home
-        router.replace('/(tabs)/home');
+        setTimeout(() => {
+          router.replace('/(tabs)/home');
+        }, 100);
       } else {
-        Alert.alert('Login Failed', data.message || 'Invalid credentials. Please try again.');
+        console.log('Login failed - response structure:', data);
+        const message = (Array.isArray(data) ? data[0]?.message : data.message) || 'Invalid credentials. Please try again.';
+        Alert.alert('Login Failed', message);
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -133,12 +168,7 @@ export default function SignInScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
-          <View style={styles.footerAction}>
-            <Text style={styles.secondaryText}>New here?</Text>
-            <TouchableOpacity onPress={() => router.push('/sign-up')}>
-              <Text style={styles.linkText}>Create an account</Text>
-            </TouchableOpacity>
-          </View>
+
         </View>
       </View>
     </View>
