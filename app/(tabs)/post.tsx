@@ -16,6 +16,7 @@ const { width } = Dimensions.get('window');
 const CREATE_POST_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-post';
 const CREATE_REEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-reel';
 const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-carousel';
+const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
 
 const PLATFORMS_POST = ['Instagram', 'Facebook', 'Twitter', 'Snapchat', 'All'];
 const PLATFORMS_REEL = ['Instagram Reels', 'YouTube Shorts', 'TikTok', 'Facebook Reels', 'Snapchat', 'All'];
@@ -222,11 +223,51 @@ export default function PostScreen() {
   const [confirmedPosts, setConfirmedPosts] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
 
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const floatAnim3 = useRef(new Animated.Value(0)).current;
   const sliderAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const fetchConnectedPlatforms = async () => {
+      try {
+        const email = await AsyncStorage.getItem('email');
+        if (!email) {
+          console.log('No email found in storage');
+          return;
+        }
+
+        const response = await fetch(CHECK_STATUS_URL, {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({ email: email }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Connection status in post.tsx:', data);
+          
+          const connected: string[] = [];
+          if (data.isInstagramConnect) connected.push('instagram');
+          if (data.isYoutubeConnect) connected.push('youtube');
+          if (data.isTiktokConnect) connected.push('tiktok');
+          
+          setConnectedPlatforms(connected);
+          console.log('Connected platforms:', connected);
+        }
+      } catch (error) {
+        console.error('Failed to fetch connected platforms', error);
+      }
+    };
+
+    fetchConnectedPlatforms();
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -601,7 +642,7 @@ export default function PostScreen() {
     try {
       setIsSubmitting(true);
 
-      const storedUserId = await AsyncStorage.getItem('userId');
+      const storedUserId = await AsyncStorage.getItem('email');
       if (!storedUserId) {
         Alert.alert('Account Missing', 'We could not find your account information locally. Please sign in again.');
         return;
@@ -694,26 +735,7 @@ export default function PostScreen() {
       const tagSummary = tags.length ? tags.map(tag => `#${tag}`).join(', ') : 'None';
       const platformSummary = confirmedPosts.length ? confirmedPosts.join(', ') : 'Default selection';
 
-      const titlePromptPayload = [
-        {
-          role: 'user',
-          content: `TASK: Generate a bilingual (English/Arabic) social media post title for hip-hop content following the rules below. TONE OF VOICE: Use ALL CAPS strategically for energy and emphasis. Blend hip-hop hype with cultural authority. Mix street authenticity, modern slang, and professional presentation. Keep titles short, punchy, and headline-style. Sound like the most connected voice in the scene. Use emojis when appropriate (🔥💯⚡🎵🎤). ARABIC LANGUAGE RULES: Use Modern Standard Arabic mixed with contemporary Arabic social media style. Include English artist names and English music terms. Maintain cultural authenticity and accessibility. POST TITLE STRUCTURE: ENGLISH TITLE must be bold, under 60 characters, include the artist name in English, and use strong action words like DROPS, RELEASES, PREMIERES, BREAKS RECORDS. ARABIC TITLE must directly reflect the English title with matching energy and use traditional Arabic script. OUTPUT FORMAT: Provide only these two lines: ENGLISH TITLE: [title] ARABIC TITLE: [title]. CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}. The user notes: "${mediaLink || (primaryMediaUri ? 'Local media selected' : 'No media link')}". Generate one English title and one Arabic title.`,
-        },
-      ];
-
-      const captionPromptPayload = [
-        {
-          role: 'user',
-          content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media post caption generation agent for hip-hop content. Generate high-performing, platform-ready post captions for Instagram and cross-platform repurposing, using a viral, authentic, community-driven tone in both languages. TONE OF VOICE: Blend infectious hip-hop hype with cultural authority, mix street authenticity, modern slang, and professional presentation, keep lines short, punchy, direct, and meme-like when helpful, always sound in-the-know, and use strategic emoji (🔥💯⚡🎵🎤) for energy without leading with a call to action. ARABIC LANGUAGE ANALYSIS: Use Modern Standard Arabic mixed with contemporary Arabic social media language, integrate English music industry terms and artist names, use Arabic numerals and trending Arabic hashtags, balance traditional Arabic with modern digital communication, and maintain cultural authenticity and accessibility. POST CAPTION STRUCTURE: Provide two lines with no labels: first the English caption (1-2 punchy lines), second the Arabic caption mirroring the English tone and including artist names in English. After that return a third line with space-separated hashtags that always include the artist name (e.g. #TravisScott) and optionally 1-2 general hashtags (#music, #release). CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}, Media Link = ${mediaLink || (primaryMediaUri ? 'Local media selected' : 'Not provided')}. The audience should feel like they are getting exclusive access. Return only the three lines of output without additional labels or explanations.`,
-        },
-      ];
-
-      formData.append('titlePromt', JSON.stringify(titlePromptPayload));
-      formData.append('captionPromt', JSON.stringify(captionPromptPayload));
-      formData.append('max_tokens', '1024');
-      formData.append('userId', storedUserId);
-      formData.append('Platforms', 'instagram');
-
+      // Determine if this is a reel
       const hasUploadedVideo = appendedMediaMeta.some(item => item.mimeType.startsWith('video/'));
       const linkLooksLikeVideo = mediaLink.trim().length > 0 && /\.(mp4|mov|m4v|avi|wmv|mkv)$/i.test(mediaLink.trim());
       const shouldUseReel = Boolean(
@@ -722,6 +744,52 @@ export default function PostScreen() {
         (resolvedMimeType && resolvedMimeType.startsWith('video/')) ||
         linkLooksLikeVideo
       );
+
+      let titlePromptPayload, captionPromptPayload;
+
+      if (shouldUseReel) {
+        // Reel-specific prompts
+        titlePromptPayload = [
+          {
+            role: 'user',
+            content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media reel title generation agent for hip-hop content. Your job is to generate high-performing, platform-ready reel titles for Instagram Reels (and repurposed to YouTube Shorts, TikTok, Facebook Reels, Snapchat Spotlight), using the most viral, authentic, and community-driven tone in both languages. TONE OF VOICE: Use ALL CAPS strategically for energy and emphasis Blend infectious hip-hop hype with cultural authority Mix street authenticity, modern slang, and professional presentation Short, punchy, headline-style titles Always sound like the most connected, in-the-know voice in the scene Use strategic emoji only if it fits the style ARABIC LANGUAGE ANALYSIS: Use Modern Standard Arabic (MSA) mixed with contemporary Arabic social media language Integrate English music industry terms and artist names Use Arabic numerals and trending Arabic hashtags Balance traditional Arabic with modern digital communication Maintain cultural authenticity and accessibility REEL TITLE STRUCTURE: ENGLISH TITLE: Hook-driven, under 100 characters, platform-neutral High curiosity/energy, immediate impact Artist name always in English Example: GURINDER GILL DROPS UNRELEASED FREESTYLE ON A YACHT ARABIC TITLE: Direct translation of the English title, same energy Artist name always in English Slightly smaller font size (for design, not output) Use traditional Arabic script Example: يقدم فريستايل غير منشور على يخت GILL GURINDER OUTPUT: Always output both English and Arabic titles,'format the whole repsone as ENGLISH TITLE: CONTENT ARABIC TITLE: CONTENT' clearly labeled..`,
+          },
+        ];
+
+        captionPromptPayload = [
+          {
+            role: 'user',
+            content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media reel caption generation agent for hip-hop content. Your job is to generate high-performing, platform-ready reel captions for Instagram Reels (and repurposed to YouTube Shorts, TikTok, Facebook Reels, Snapchat Spotlight), using the most viral, authentic, and community-driven tone in both languages.\n\nADDITIONAL RULES (IMPORTANT):\n- Do NOT include Arabic hashtags under any circumstances.\n- Do NOT include section labels such as:\n  - "## Arabic:" \n  - "## English:" \n  - "# Instagram Reel Caption - Bilingual (English/Arabic)"\n- Do NOT include any formatting headers or labels — only output the raw caption content.\n- Output only the English CTA, English caption, Arabic CTA, Arabic caption, and English hashtags.\n- No Arabic hashtags at all.\n\nTONE OF VOICE:\nBlend infectious hip-hop hype with cultural authority\nMix street authenticity, modern slang, and professional presentation\nShort, punchy, direct, and sometimes meme-like\nAlways sound like the most connected, in-the-know voice in the scene\nUse strategic emoji for energy\nStart with a general call to action (e.g., Follow for more content like this. / تابع للمزيد من هذا المحتوى)\n\nARABIC LANGUAGE ANALYSIS:\nUse Modern Standard Arabic (MSA) mixed with contemporary Arabic social media language\nIntegrate English music industry terms and artist names\nUse Arabic numerals and trending Arabic hashtags (BUT FOLLOW RULE ABOVE: Arabic hashtags must NOT be included)\nBalance traditional Arabic with modern digital communication\nMaintain cultural authenticity and accessibility\n\nREEL CAPTION STRUCTURE:\nENGLISH CTA: Follow for more content like this.\nARABIC CTA: تابع للمزيد من هذا المحتوى\n\n[Space]\n\nENGLISH CAPTION:\nShort, punchy description of the content (1-2 lines, meme/viral style, direct, sometimes playful or meme-like, always in the same tone)\nExample: Reasonable crashout, not gonna lie.\n\nARABIC CAPTION:\nDirect translation of the English caption, same energy\nArtist name always in English\nExample: بصراحة، انهيار معقول\n\nHASHTAGS:\nAlways include a hashtag of the artist name (e.g. #TravisScott)\nOptional: 1-2 broad, platform-neutral English hashtags only (e.g. #viral #music #rap)\nABSOLUTELY NO ARABIC HASHTAGS\n\nOUTPUT:\nAlways output both English and Arabic captions without labels, without headers, and without Arabic hashtags. Only the actual caption content.`,
+          },
+        ];
+      } else {
+        // Post-specific prompts
+        titlePromptPayload = [
+          {
+            role: 'user',
+            content: `TASK: Generate a bilingual (English/Arabic) social media post title for hip-hop content following the rules below. TONE OF VOICE: Use ALL CAPS strategically for energy and emphasis. Blend hip-hop hype with cultural authority. Mix street authenticity, modern slang, and professional presentation. Keep titles short, punchy, and headline-style. Sound like the most connected voice in the scene. Use emojis when appropriate (🔥💯⚡🎵🎤). ARABIC LANGUAGE RULES: Use Modern Standard Arabic mixed with contemporary Arabic social media style. Include English artist names and English music terms. Maintain cultural authenticity and accessibility. POST TITLE STRUCTURE: ENGLISH TITLE must be bold, under 60 characters, include the artist name in English, and use strong action words like DROPS, RELEASES, PREMIERES, BREAKS RECORDS. ARABIC TITLE must directly reflect the English title with matching energy and use traditional Arabic script. OUTPUT FORMAT: Provide only these two lines: ENGLISH TITLE: [title] ARABIC TITLE: [title]. CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}. The user notes: "${mediaLink || (primaryMediaUri ? 'Local media selected' : 'No media link')}". Generate one English title and one Arabic title.`,
+          },
+        ];
+
+        captionPromptPayload = [
+          {
+            role: 'user',
+            content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media post caption generation agent for hip-hop content. Generate high-performing, platform-ready post captions for Instagram and cross-platform repurposing, using a viral, authentic, community-driven tone in both languages. TONE OF VOICE: Blend infectious hip-hop hype with cultural authority, mix street authenticity, modern slang, and professional presentation, keep lines short, punchy, direct, and meme-like when helpful, always sound in-the-know, and use strategic emoji (🔥💯⚡🎵🎤) for energy without leading with a call to action. ARABIC LANGUAGE ANALYSIS: Use Modern Standard Arabic mixed with contemporary Arabic social media language, integrate English music industry terms and artist names, use Arabic numerals and trending Arabic hashtags, balance traditional Arabic with modern digital communication, and maintain cultural authenticity and accessibility. POST CAPTION STRUCTURE: Provide two lines with no labels: first the English caption (1-2 punchy lines), second the Arabic caption mirroring the English tone and including artist names in English. After that return a third line with space-separated hashtags that always include the artist name (e.g. #TravisScott) and optionally 1-2 general hashtags (#music, #release). CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}, Media Link = ${mediaLink || (primaryMediaUri ? 'Local media selected' : 'Not provided')}. The audience should feel like they are getting exclusive access. Return only the three lines of output without additional labels or explanations.`,
+          },
+        ];
+      }
+
+      formData.append('titlePromt', JSON.stringify(titlePromptPayload));
+      formData.append('captionPromt', JSON.stringify(captionPromptPayload));
+      formData.append('max_tokens', '1024');
+      formData.append('email', storedUserId);
+      
+      // Append each platform individually to create an array (using 'Platforms' to match backend)
+      const platformsToSend = selectedPlatforms.length > 0 ? selectedPlatforms : ['instagram'];
+      platformsToSend.forEach((platform) => {
+        formData.append('Platforms', platform);
+      });
+
       const shouldUseCarousel = contentType === 'post' && appendedMediaMeta.length > 1;
 
       formData.append('isReel', shouldUseReel ? 'true' : 'false');
@@ -733,6 +801,8 @@ export default function PostScreen() {
       const targetEndpoint = shouldUseCarousel
         ? CREATE_CAROUSEL_ENDPOINT
         : (shouldUseReel ? CREATE_REEL_ENDPOINT : CREATE_POST_ENDPOINT);
+
+      
 
       const response = await fetch(targetEndpoint, {
         method: 'POST',
@@ -1172,7 +1242,7 @@ export default function PostScreen() {
                   </View>
                 </View>
                 <View style={styles.platformsGrid}>
-                  {SOCIAL_PLATFORMS.map((platform) => (
+                  {SOCIAL_PLATFORMS.filter(platform => connectedPlatforms.includes(platform.id)).map((platform) => (
                     <TouchableOpacity
                       key={platform.id}
                       activeOpacity={0.7}

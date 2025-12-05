@@ -24,7 +24,7 @@ export default function SignInScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
-    
+
     setLoading(true);
 
     try {
@@ -48,53 +48,24 @@ export default function SignInScreen() {
       const data = await response.json();
       console.log('Response data:', JSON.stringify(data, null, 2));
       
-      // Handle different response formats from n8n
-      let userData = null;
-      let isSuccess = false;
-      
-      // Check if response is an array (n8n might return array)
-      if (Array.isArray(data)) {
-        const firstItem = data[0];
-        if (firstItem) {
-          isSuccess = firstItem.success === true;
-          userData = firstItem.user || firstItem;
-        }
-      } else {
-        isSuccess = data.success === true;
-        userData = data.user || data;
-      }
-      
-      console.log('Parsed success:', isSuccess);
-      console.log('User data:', userData);
-      
-      if (isSuccess && userData && (userData._id || userData.id)) {
-        console.log('Login successful, storing user data...');
-        // Store user details
-        const userId = userData._id || userData.id;
-        const userEmail = userData.email || email;
-        const userName = userData.name || userData.username || '';
+      // Check success status from backend
+      if (data.success === true && data.user && data.user._id) {
+        console.log('Login successful, storing email...');
         
-        await AsyncStorage.setItem('userId', userId);
-        await AsyncStorage.setItem('userEmail', userEmail);
-        if (userName) {
-          await AsyncStorage.setItem('userName', userName);
-        }
+        // Store only email in AsyncStorage
+        const userEmail = data.user._id; // Backend returns email in _id field
+        await AsyncStorage.setItem('email', userEmail);
         
-        // Check for connected accounts
-        if (userData.instagramId || userData.instagram_id || userData.instagramPostId) {
-          await AsyncStorage.setItem('instagramConnectedUserId', userId);
-        }
-        
-        console.log('User data stored successfully');
+        console.log('Email stored successfully:', userEmail);
         console.log('Redirecting to home...');
         
-        // Manual redirect to home
+        // Redirect to home
         setTimeout(() => {
           router.replace('/(tabs)/home');
         }, 100);
       } else {
-        console.log('Login failed - response structure:', data);
-        const message = (Array.isArray(data) ? data[0]?.message : data.message) || 'Invalid credentials. Please try again.';
+        console.log('Login failed - Invalid credentials');
+        const message = data.message || 'Invalid credentials. Please try again.';
         Alert.alert('Login Failed', message);
       }
     } catch (error) {

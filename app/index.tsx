@@ -12,8 +12,8 @@ export default function Index() {
 
   const checkAuth = async () => {
     try {
-      const userId = await AsyncStorage.getItem('userId');
-      setIsAuthenticated(!!userId);
+      const email = await AsyncStorage.getItem('email');
+      setIsAuthenticated(!!email);
     } catch (error) {
       console.error('Auth check failed:', error);
       setIsAuthenticated(false);

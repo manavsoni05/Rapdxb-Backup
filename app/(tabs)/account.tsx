@@ -5,8 +5,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, User, Bell, Lock, CreditCard, LogOut, Check, Plus, Camera } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 const SETTINGS_OPTIONS = [
@@ -23,6 +24,7 @@ export default function AccountScreen() {
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<any>(null);
   const [connectingPlatform, setConnectingPlatform] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(true);
   const [platforms, setPlatforms] = useState([
     { id: 'instagram', name: 'Instagram', connected: false, icon: 'https://i.imgur.com/vkcuEzE.png', color: ['#E1306C', '#C13584'] as [string, string] },
     { id: 'tiktok', name: 'TikTok', connected: false, icon: 'https://i.imgur.com/K2FKVUP.png', color: ['#000000', '#333333'] as [string, string] },
@@ -31,6 +33,51 @@ export default function AccountScreen() {
     { id: 'twitter', name: 'Twitter', connected: false, icon: 'https://i.imgur.com/fPOjKNr.png', color: ['#1DA1F2', '#1a8cd8'] as [string, string] },
     { id: 'facebook', name: 'Facebook', connected: false, icon: 'https://i.imgur.com/zfY36en.png', color: ['#1877F2', '#0a5fd1'] as [string, string] },
   ]);
+
+  useEffect(() => {
+    // Check connection status when component mounts
+    const checkInitialStatus = async () => {
+      setCheckingStatus(true);
+      try {
+        const email = await AsyncStorage.getItem('email');
+        if (!email) {
+          setCheckingStatus(false);
+          return;
+        }
+
+        const response = await fetch('https://n8n-production-0558.up.railway.app/webhook/check-connection-status', {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            platform: 'instagram',
+            email: email
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          
+          if (data.connected) {
+            setPlatforms(prevPlatforms =>
+              prevPlatforms.map(p =>
+                p.id === 'instagram' ? { ...p, connected: true } : p
+              )
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Error checking initial connection status:', error);
+      } finally {
+        setCheckingStatus(false);
+      }
+    };
+    
+    checkInitialStatus();
+  }, []);
 
   const handleBack = () => {
     if (Platform.OS !== 'web') {
@@ -121,12 +168,66 @@ export default function AccountScreen() {
     }
   };
 
-  const handleConnect = (platform: any) => {
+  const handleConnect = async (platform: any) => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setSelectedPlatform(platform);
-    setShowConnectionModal(true);
+    
+    if (platform.id === 'instagram') {
+      // For Instagram, call n8n webhook to get auth URL
+      setSelectedPlatform(platform);
+      setConnectingPlatform(true);
+      
+      try {
+        const email = await AsyncStorage.getItem('email');
+        if (!email) {
+          Alert.alert('Error', 'Please sign in again.');
+          setConnectingPlatform(false);
+          return;
+        }
+
+        const response = await fetch('https://n8n-production-0558.up.railway.app/webhook/instagram', {
+          method: 'POST',
+          mode: 'cors',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          body: JSON.stringify({
+            platform: 'instagram',
+            email: email
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to initiate Instagram connection');
+        }
+        
+        const data = await response.json();
+        
+        if (data.authUrl) {
+          // Open the auth URL in a new window/tab
+          if (Platform.OS === 'web') {
+            window.open(data.authUrl, '_blank');
+          } else {
+            // For mobile, you might want to use Linking or WebBrowser
+            Alert.alert('Connect Instagram', 'Please complete the authentication in your browser');
+          }
+          
+          // Start checking connection status
+          setTimeout(() => checkConnectionStatus(), 3000);
+        }
+      } catch (error) {
+        console.error('Instagram connection error:', error);
+        Alert.alert('Connection Error', 'Failed to connect to Instagram. Please try again.');
+      } finally {
+        setConnectingPlatform(false);
+      }
+    } else {
+      // For other platforms, show the modal as before
+      setSelectedPlatform(platform);
+      setShowConnectionModal(true);
+    }
   };
 
   const handleConfirmConnection = async () => {
@@ -135,7 +236,7 @@ export default function AccountScreen() {
     setConnectingPlatform(true);
 
     try {
-      // Simulate connection process
+      // For non-Instagram platforms, simulate connection process
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       // Update platform connection status
@@ -155,6 +256,50 @@ export default function AccountScreen() {
       console.error('Connection error:', error);
     } finally {
       setConnectingPlatform(false);
+    }
+  };
+
+  const checkConnectionStatus = async () => {
+    try {
+      const email = await AsyncStorage.getItem('email');
+      if (!email) {
+        return;
+      }
+
+      const response = await fetch('https://n8n-production-0558.up.railway.app/webhook/check-connection-status', {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          platform: 'instagram',
+          email: email
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to check connection status');
+      }
+      
+      const data = await response.json();
+      
+      if (data.connected) {
+        setPlatforms(prevPlatforms =>
+          prevPlatforms.map(p =>
+            p.id === 'instagram' ? { ...p, connected: true } : p
+          )
+        );
+        
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else {
+          alert('Instagram connected successfully!');
+        }
+      }
+    } catch (error) {
+      console.error('Error checking connection status:', error);
     }
   };
 
