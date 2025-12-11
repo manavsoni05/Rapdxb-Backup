@@ -206,6 +206,8 @@ export default function PostScreen() {
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [tempDate, setTempDate] = useState<Date>(new Date());
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [mediaLink, setMediaLink] = useState('');
@@ -224,10 +226,29 @@ export default function PostScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
+  const [notification, setNotification] = useState<{type: 'error' | 'success' | 'info'; message: string} | null>(null);
+  const notificationOpacity = useRef(new Animated.Value(0)).current;
 
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const floatAnim3 = useRef(new Animated.Value(0)).current;
+
+  const showNotification = (type: 'error' | 'success' | 'info', message: string) => {
+    setNotification({ type, message });
+    Animated.sequence([
+      Animated.timing(notificationOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(5000),
+      Animated.timing(notificationOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setNotification(null));
+  };
   const sliderAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -235,7 +256,6 @@ export default function PostScreen() {
       try {
         const email = await AsyncStorage.getItem('email');
         if (!email) {
-          console.log('No email found in storage');
           return;
         }
 
@@ -251,7 +271,6 @@ export default function PostScreen() {
 
         if (response.ok) {
           const data = await response.json();
-          console.log('Connection status in post.tsx:', data);
           
           const connected: string[] = [];
           if (data.isInstagramConnect) connected.push('instagram');
@@ -259,7 +278,6 @@ export default function PostScreen() {
           if (data.isTiktokConnect) connected.push('tiktok');
           
           setConnectedPlatforms(connected);
-          console.log('Connected platforms:', connected);
         }
       } catch (error) {
         console.error('Failed to fetch connected platforms', error);
@@ -576,9 +594,23 @@ export default function PostScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     if (!scheduleDate) {
-      setScheduleDate(new Date());
+      const now = new Date();
+      // Round to next 5-minute interval
+      const minutes = Math.ceil(now.getMinutes() / 5) * 5;
+      now.setMinutes(minutes);
+      now.setSeconds(0);
+      now.setMilliseconds(0);
+      setTempDate(now);
+      setScheduleDate(now);
+    } else {
+      setTempDate(new Date(scheduleDate));
     }
-    setShowDatePicker(true);
+    
+    if (Platform.OS === 'web') {
+      setShowScheduleModal(true);
+    } else {
+      setShowDatePicker(true);
+    }
   };
 
   const formatDateTime = (date: Date | null) => {
@@ -592,6 +624,53 @@ export default function PostScreen() {
       hour12: true,
     };
     return date.toLocaleString('en-US', options);
+  };
+
+  const generateTimeOptions = () => {
+    const times: string[] = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 5) {
+        const h = hour.toString().padStart(2, '0');
+        const m = minute.toString().padStart(2, '0');
+        times.push(`${h}:${m}`);
+      }
+    }
+    return times;
+  };
+
+  const handleDateInputChange = (e: any) => {
+    const dateStr = e.target.value;
+    if (dateStr) {
+      const newDate = new Date(dateStr);
+      setTempDate(prev => {
+        const updated = new Date(prev);
+        updated.setFullYear(newDate.getFullYear());
+        updated.setMonth(newDate.getMonth());
+        updated.setDate(newDate.getDate());
+        return updated;
+      });
+    }
+  };
+
+  const handleTimeSelect = (timeStr: string) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    setTempDate(prev => {
+      const updated = new Date(prev);
+      updated.setHours(hours);
+      updated.setMinutes(minutes);
+      updated.setSeconds(0);
+      updated.setMilliseconds(0);
+      return updated;
+    });
+  };
+
+  const handleScheduleConfirm = () => {
+    setScheduleDate(new Date(tempDate));
+    setShowScheduleModal(false);
+  };
+
+  const handleScheduleCancel = () => {
+    setShowScheduleModal(false);
   };
 
   const handleRemoveTag = (tagToRemove: string) => {
@@ -623,16 +702,17 @@ export default function PostScreen() {
       return;
     }
 
+    // Validation for required fields
     const hasUploadedMedia = mediaOrder.length > 0 || uploadedPhotos.length > 0 || uploadedVideos.length > 0;
     const hasLink = Boolean(mediaLink.trim());
 
     if (!hasUploadedMedia && !hasLink) {
-      Alert.alert('Missing Media', 'Please upload a media file or provide a media link before creating your post.');
+      showNotification('error', 'Missing Media: Please upload a media file or provide a media link.');
       return;
     }
 
     if (contentType === 'post' && !title.trim()) {
-      Alert.alert('Title Required', 'Please enter a title for your post.');
+      showNotification('error', 'Title Required: Please enter a title for your post.');
       return;
     }
 
@@ -641,10 +721,11 @@ export default function PostScreen() {
 
     try {
       setIsSubmitting(true);
+      showNotification('info', 'Post in Progress...');
 
       const storedUserId = await AsyncStorage.getItem('email');
       if (!storedUserId) {
-        Alert.alert('Account Missing', 'We could not find your account information locally. Please sign in again.');
+        showNotification('error', 'Account Missing: Please sign in again.');
         return;
       }
 
@@ -660,7 +741,6 @@ export default function PostScreen() {
         : mediaLink.trim()
           ? `link:${mediaLink.trim()}`
           : 'none';
-      console.log('Submitting media source', mediaSourceLabel);
 
       const appendedMediaMeta: { index: number; uri: string; fileName: string; mimeType: string }[] = [];
 
@@ -726,7 +806,6 @@ export default function PostScreen() {
           formData.append('mediaFileName', fileName);
           formData.append('mediaMimeType', mimeType);
         } catch (conversionError) {
-          console.warn('Falling back to direct link, unable to convert media link to base64', conversionError);
           formData.append('mediaUrl', JSON.stringify({ url: mediaLink.trim() }));
         }
       }
@@ -791,6 +870,15 @@ export default function PostScreen() {
         });
       }
       
+      // Add schedule information
+      if (scheduleDate) {
+        const scheduledFor = scheduleDate.toISOString().slice(0, 19);
+        formData.append('scheduledFor', scheduledFor);
+        formData.append('publishnow', 'false');
+      } else {
+        formData.append('publishnow', 'true');
+      }
+      
       // Append each platform individually to create an array (using 'Platforms' to match backend)
       const platformsToSend = selectedPlatforms.length > 0 ? selectedPlatforms : ['instagram'];
       platformsToSend.forEach((platform) => {
@@ -818,7 +906,14 @@ export default function PostScreen() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Request failed (${response.status}): ${errorText}`);
+        let errorMessage = 'Request failed. Please try again.';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorText;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       let responseBody: any = null;
@@ -828,8 +923,7 @@ export default function PostScreen() {
         responseBody = null;
       }
 
-      Alert.alert('Post Submitted', 'Your content has been queued successfully.');
-      console.log('Create post response', responseBody);
+      showNotification('success', 'Post is Live Now! 🎉');
 
       setTitle('');
       setCaption('');
@@ -843,7 +937,8 @@ export default function PostScreen() {
       setMediaOrder([]);
     } catch (error) {
       console.error('Failed to create post', error);
-      Alert.alert('Submission Failed', error instanceof Error ? error.message : 'We were unable to submit your post. Please try again in a moment.');
+      const errorMessage = error instanceof Error ? error.message : 'We were unable to submit your post. Please try again.';
+      showNotification('error', errorMessage);
     } finally {
       if (pendingCleanups.length && Platform.OS !== 'web') {
         for (const cleanupUri of pendingCleanups) {
@@ -914,6 +1009,39 @@ export default function PostScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      {/* Notification Component */}
+      {notification && (
+        <Animated.View 
+          style={[
+            styles.notification,
+            notification.type === 'error' && styles.notificationError,
+            notification.type === 'success' && styles.notificationSuccess,
+            notification.type === 'info' && styles.notificationInfo,
+            { 
+              opacity: notificationOpacity,
+              top: insets.top + 16,
+            }
+          ]}
+        >
+          <View style={styles.notificationContent}>
+            {notification.type === 'success' && (
+              <View style={styles.notificationIconSuccess}>
+                <Check color="#ffffff" size={20} strokeWidth={3} />
+              </View>
+            )}
+            {notification.type === 'error' && (
+              <View style={styles.notificationIconError}>
+                <X color="#ffffff" size={20} strokeWidth={3} />
+              </View>
+            )}
+            {notification.type === 'info' && (
+              <ActivityIndicator color="#ffffff" size="small" style={styles.notificationSpinner} />
+            )}
+            <Text style={styles.notificationText}>{notification.message}</Text>
+          </View>
+        </Animated.View>
+      )}
+      
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
@@ -1313,43 +1441,140 @@ export default function PostScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-      {Platform.OS === 'ios' && showDatePicker && (
+      
+      {/* Custom Schedule Modal - All Platforms */}
+      {(showScheduleModal || (Platform.OS === 'ios' && showDatePicker)) && (
         <Modal
-          visible={showDatePicker}
+          visible={showScheduleModal || showDatePicker}
           transparent={true}
           animationType="slide"
         >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.modalCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <Text style={styles.modalTitle}>Select Date & Time</Text>
-                <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.modalDoneText}>Done</Text>
+          <TouchableOpacity 
+            style={styles.modalOverlaySchedule}
+            activeOpacity={1}
+            onPress={Platform.OS === 'ios' ? () => setShowDatePicker(false) : handleScheduleCancel}
+          >
+            <TouchableOpacity 
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+              style={styles.scheduleModalContent}
+            >
+              <View style={styles.scheduleModalHeader}>
+                <Text style={styles.scheduleModalTitle}>Schedule Post</Text>
+                <TouchableOpacity 
+                  onPress={Platform.OS === 'ios' ? () => setShowDatePicker(false) : handleScheduleCancel} 
+                  style={styles.scheduleCloseButton}
+                >
+                  <X color="#ffffff" size={24} strokeWidth={2} />
                 </TouchableOpacity>
               </View>
-              <View style={styles.pickersContainer}>
-                <DateTimePicker
-                  value={scheduleDate || new Date()}
-                  mode="date"
-                  display="spinner"
-                  onChange={handleDateChange}
-                  textColor="#000000"
-                  style={styles.datePicker}
-                />
-                <DateTimePicker
-                  value={scheduleDate || new Date()}
-                  mode="time"
-                  display="spinner"
-                  onChange={handleTimeChange}
-                  textColor="#000000"
-                  style={styles.timePicker}
-                />
+              
+              <View style={styles.scheduleModalBody}>
+                {Platform.OS === 'ios' ? (
+                  <View style={styles.pickersContainer}>
+                    <DateTimePicker
+                      value={scheduleDate || new Date()}
+                      mode="date"
+                      display="spinner"
+                      onChange={handleDateChange}
+                      textColor="#ffffff"
+                      style={styles.datePicker}
+                    />
+                    <DateTimePicker
+                      value={scheduleDate || new Date()}
+                      mode="time"
+                      display="spinner"
+                      onChange={handleTimeChange}
+                      textColor="#ffffff"
+                      style={styles.timePicker}
+                    />
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.dateTimeRow}>
+                      <View style={styles.dateInputWrapper}>
+                        <Text style={styles.inputLabel}>Date</Text>
+                        <input
+                          type="date"
+                          value={tempDate.toISOString().split('T')[0]}
+                          onChange={handleDateInputChange}
+                          min={new Date().toISOString().split('T')[0]}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            fontSize: '15px',
+                            borderRadius: '12px',
+                            border: '2px solid #3b82f6',
+                            backgroundColor: '#0a0a0a',
+                            color: '#ffffff',
+                            fontFamily: 'Archivo',
+                          }}
+                        />
+                      </View>
+
+                      <View style={styles.timeInputWrapper}>
+                        <Text style={styles.inputLabel}>Time</Text>
+                        <input
+                          type="time"
+                          value={`${tempDate.getHours().toString().padStart(2, '0')}:${tempDate.getMinutes().toString().padStart(2, '0')}`}
+                          onChange={(e) => {
+                            const [hours, minutes] = e.target.value.split(':').map(Number);
+                            const roundedMinutes = Math.round(minutes / 5) * 5;
+                            setTempDate(prev => {
+                              const updated = new Date(prev);
+                              updated.setHours(hours);
+                              updated.setMinutes(roundedMinutes);
+                              updated.setSeconds(0);
+                              updated.setMilliseconds(0);
+                              return updated;
+                            });
+                          }}
+                          step="300"
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            fontSize: '15px',
+                            borderRadius: '12px',
+                            border: '2px solid #3b82f6',
+                            backgroundColor: '#0a0a0a',
+                            color: '#ffffff',
+                            fontFamily: 'Archivo',
+                          }}
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.previewDisplay}>
+                      <Text style={styles.previewLabel}>Scheduled for:</Text>
+                      <Text style={styles.previewValue}>{formatDateTime(tempDate)}</Text>
+                    </View>
+
+                    <View style={styles.scheduleModalActions}>
+                      <TouchableOpacity
+                        style={styles.scheduleCancelButton}
+                        onPress={handleScheduleCancel}
+                      >
+                        <Text style={styles.scheduleCancelButtonText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.scheduleConfirmButton}
+                        onPress={handleScheduleConfirm}
+                      >
+                        <LinearGradient
+                          colors={['#fb923c', '#f97316']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.scheduleConfirmGradient}
+                        >
+                          <Text style={styles.scheduleConfirmButtonText}>Confirm</Text>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </View>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
       )}
       {Platform.OS === 'android' && showDatePicker && (
@@ -2300,6 +2525,172 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 17,
     fontFamily: 'Archivo-Bold',
+    letterSpacing: -0.3,
+  },
+  notification: {
+    position: 'absolute',
+    right: 16,
+    left: 16,
+    zIndex: 9999,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  notificationError: {
+    backgroundColor: '#ef4444',
+  },
+  notificationSuccess: {
+    backgroundColor: '#10b981',
+  },
+  notificationInfo: {
+    backgroundColor: '#3b82f6',
+  },
+  notificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationIconSuccess: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationIconError: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationSpinner: {
+    marginRight: 0,
+  },
+  notificationText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 15,
+    fontFamily: 'Archivo-SemiBold',
+    letterSpacing: -0.2,
+    lineHeight: 20,
+  },
+  modalOverlaySchedule: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'flex-end',
+  },
+  scheduleModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '50%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  scheduleModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  scheduleModalTitle: {
+    fontSize: 20,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+  },
+  scheduleCloseButton: {
+    padding: 4,
+  },
+  scheduleModalBody: {
+    flex: 1,
+    padding: 20,
+    gap: 12,
+    overflow: 'hidden',
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateInputWrapper: {
+    flex: 1,
+  },
+  timeInputWrapper: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontFamily: 'Archivo-SemiBold',
+    color: '#ffffff',
+    letterSpacing: -0.2,
+    marginBottom: 4,
+  },
+  previewDisplay: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    gap: 2,
+  },
+  previewLabel: {
+    fontSize: 12,
+    fontFamily: 'Archivo-Medium',
+    color: 'rgba(255, 255, 255, 0.6)',
+    letterSpacing: -0.2,
+  },
+  previewValue: {
+    fontSize: 15,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
+    letterSpacing: -0.3,
+  },
+  scheduleModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  scheduleCancelButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scheduleCancelButtonText: {
+    fontSize: 16,
+    fontFamily: 'Archivo-SemiBold',
+    color: '#ffffff',
+    letterSpacing: -0.3,
+  },
+  scheduleConfirmButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  scheduleConfirmGradient: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scheduleConfirmButtonText: {
+    fontSize: 16,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
     letterSpacing: -0.3,
   },
 });

@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, TextInput, RefreshControl, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, TextInput, RefreshControl, Alert, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, Edit2, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SOCIAL_PLATFORMS = [
@@ -20,6 +20,7 @@ const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/che
 const INSTAGRAM_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/instagram';
 const YOUTUBE_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/youtube';
 const TIKTOK_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/tiktok';
+const DISCONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/disconnect';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -34,6 +35,8 @@ export default function SettingsScreen() {
     youtube: false,
     tiktok: false,
   });
+  const [notification, setNotification] = useState<{type: 'success' | 'error'; message: string} | null>(null);
+  const notificationOpacity = useRef(new Animated.Value(0)).current;
 
   const checkConnectionStatus = useCallback(async () => {
     try {
@@ -198,6 +201,82 @@ export default function SettingsScreen() {
     });
   };
 
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ type, message });
+    Animated.sequence([
+      Animated.timing(notificationOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+      Animated.delay(5000),
+      Animated.timing(notificationOpacity, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setNotification(null));
+  };
+
+  const handleDisconnect = async (platformId: string, platformName: string) => {
+    console.log('Disconnect button clicked for:', platformName, platformId);
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    try {
+      const email = await AsyncStorage.getItem('email');
+      console.log('Email from storage:', email);
+      
+      if (!email) {
+        showNotification('error', 'No email found. Please sign in again.');
+        return;
+      }
+
+      const payload = {
+        email: email,
+        platform: platformId,
+      };
+      
+      console.log('Sending disconnect request to:', DISCONNECT_URL);
+      console.log('Payload:', payload);
+
+      const response = await fetch(DISCONNECT_URL, {
+        method: 'DELETE',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
+      if (response.ok) {
+        // Update connection status immediately
+        setConnectionStatus(prev => ({
+          ...prev,
+          [platformId]: false,
+        }));
+
+        // Wait 3 seconds before showing notification
+        setTimeout(() => {
+          showNotification('success', `${platformName} disconnected successfully!`);
+        }, 3000);
+      } else {
+        const errorText = await response.text();
+        console.error('Disconnect failed:', errorText);
+        showNotification('error', `Failed to disconnect ${platformName}. Please try again.`);
+      }
+    } catch (error) {
+      console.error('Disconnect error:', error);
+      showNotification('error', `Failed to disconnect ${platformName}. Please try again.`);
+    }
+  };
+
   const handleBack = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -246,6 +325,35 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      {/* Notification Component */}
+      {notification && (
+        <Animated.View 
+          style={[
+            styles.notification,
+            notification.type === 'error' && styles.notificationError,
+            notification.type === 'success' && styles.notificationSuccess,
+            { 
+              opacity: notificationOpacity,
+              top: insets.top + 16,
+            }
+          ]}
+        >
+          <View style={styles.notificationContent}>
+            {notification.type === 'success' && (
+              <View style={styles.notificationIconSuccess}>
+                <Check color="#ffffff" size={20} strokeWidth={3} />
+              </View>
+            )}
+            {notification.type === 'error' && (
+              <View style={styles.notificationIconError}>
+                <X color="#ffffff" size={20} strokeWidth={3} />
+              </View>
+            )}
+            <Text style={styles.notificationText}>{notification.message}</Text>
+          </View>
+        </Animated.View>
+      )}
+      
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
@@ -332,16 +440,19 @@ export default function SettingsScreen() {
               const platformStatus = isConnected ? 'Connected' : (canConnect ? 'Connect' : 'Not connected');
 
               return (
-              <TouchableOpacity
+              <View
                 key={platform.id}
                 style={[
                   styles.platformItem, 
                   Platform.OS === 'web' ? styles.pointerCursor : null,
                 ]}
-                activeOpacity={0.8}
-                onPress={() => handlePlatformPress(platform.id)}
-                disabled={!canConnect}
               >
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => handlePlatformPress(platform.id)}
+                  disabled={!canConnect || isConnected}
+                  style={{ flex: 1 }}
+                >
                 <LinearGradient
                   colors={platform.color}
                   start={{ x: 0, y: 0 }}
@@ -379,7 +490,19 @@ export default function SettingsScreen() {
                     )}
                   </View>
                 </LinearGradient>
-              </TouchableOpacity>
+                </TouchableOpacity>
+                
+                {/* Disconnect Button */}
+                {isConnected && canConnect && (
+                  <TouchableOpacity
+                    style={styles.disconnectButton}
+                    activeOpacity={0.7}
+                    onPress={() => handleDisconnect(platform.id, platform.name)}
+                  >
+                    <Text style={styles.disconnectButtonText}>Disconnect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
               );
             })}
           </View>
@@ -801,5 +924,69 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo-Bold',
     color: '#ffffff',
     letterSpacing: -0.3,
+  },
+  notification: {
+    position: 'absolute',
+    right: 16,
+    left: 16,
+    zIndex: 9999,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  notificationError: {
+    backgroundColor: '#ef4444',
+  },
+  notificationSuccess: {
+    backgroundColor: '#10b981',
+  },
+  notificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationIconSuccess: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationIconError: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 15,
+    fontFamily: 'Archivo-SemiBold',
+    letterSpacing: -0.2,
+    lineHeight: 20,
+  },
+  disconnectButton: {
+    marginTop: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.9)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disconnectButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontFamily: 'Archivo-SemiBold',
+    letterSpacing: -0.2,
   },
 });

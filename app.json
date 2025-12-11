@@ -8,6 +8,10 @@
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "updates": {
+      "enabled": false,
+      "fallbackToCacheTimeout": 0
+    },
     "android": {
       "package": "com.wrapdxp.app",
       "adaptiveIcon": {
