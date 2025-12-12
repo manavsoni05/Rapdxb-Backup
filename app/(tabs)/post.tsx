@@ -880,7 +880,7 @@ export default function PostScreen() {
       }
       
       // Append each platform individually to create an array (using 'Platforms' to match backend)
-      const platformsToSend = selectedPlatforms.length > 0 ? selectedPlatforms : ['instagram'];
+      const platformsToSend = selectedPlatforms.length == 1 ? [...selectedPlatforms,  ''] : selectedPlatforms
       platformsToSend.forEach((platform) => {
         formData.append('Platforms', platform);
       });

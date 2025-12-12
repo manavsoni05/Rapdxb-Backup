@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, Edit2, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -153,7 +154,7 @@ export default function SettingsScreen() {
       if (authData && authData.authUrl) {
         console.log(`Opening auth URL: ${authData.authUrl}`);
         
-        // Open the auth URL in a new window/tab
+        // Open the auth URL
         if (Platform.OS === 'web') {
           const authWindow = window.open(authData.authUrl, '_blank');
           if (!authWindow) {
@@ -162,13 +163,19 @@ export default function SettingsScreen() {
             alert(`Opening ${platformId} authentication. Please complete the process in the new tab.`);
           }
         } else {
-          // For mobile, you might want to use Linking or WebBrowser
-          Alert.alert(
-            `Connect ${platformId}`,
-            'Opening authentication page...',
-            [{ text: 'OK' }]
-          );
-          console.log(`Opening ${platformId} auth URL:`, authData.authUrl);
+          // For mobile, use WebBrowser from expo-web-browser
+          try {
+            await WebBrowser.openBrowserAsync(authData.authUrl, {
+              dismissButtonStyle: 'close',
+              presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+              controlsColor: '#3b82f6',
+            });
+            console.log(`Opened ${platformId} auth URL successfully`);
+          } catch (error) {
+            console.error('Failed to open browser:', error);
+            Alert.alert('Error', 'Failed to open authentication page. Please try again.');
+            return;
+          }
         }
 
         // Start checking connection status after a delay
