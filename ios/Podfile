@@ -4,6 +4,24 @@ require File.join(File.dirname(`node --print "require.resolve('react-native/pack
 require 'json'
 podfile_properties = JSON.parse(File.read(File.join(__dir__, 'Podfile.properties.json'))) rescue {}
 
+# React Native Permissions setup
+def node_require(script)
+  # Resolve script with node to allow for hoisting
+  require Pod::Executable.execute_command('node', ['-p',
+    "require.resolve(
+      '#{script}',
+      {paths: [process.argv[1]]},
+    )", __dir__]).strip
+end
+
+node_require('react-native/scripts/react_native_pods.rb')
+node_require('react-native-permissions/scripts/setup.rb')
+
+# Setup permissions
+setup_permissions([
+  'Microphone',
+])
+
 def ccache_enabled?(podfile_properties)
   # Environment variable takes precedence
   return ENV['USE_CCACHE'] == '1' if ENV['USE_CCACHE']
@@ -56,5 +74,20 @@ target 'boltexponativewind' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+    
+    # Fix for expo-speech-recognition and React Native linking issues
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
+        
+        # Fix for undefined symbols
+        config.build_settings['OTHER_LDFLAGS'] ||= ['$(inherited)']
+        
+        # Enable modular headers for specific pods
+        if ['ExpoSpeechRecognition'].include?(target.name)
+          config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        end
+      end
+    end
   end
 end

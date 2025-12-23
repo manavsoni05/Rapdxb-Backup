@@ -13,18 +13,31 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/AppIcon.png",
         "backgroundColor": "#000000"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.social.aiautomation"
+      "bundleIdentifier": "com.social.aiautomation",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
+      },
+      "appleTeamId": "MQCBL6YS36"
     },
     "web": {
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/images/AppIcon.png"
     },
-    "plugins": ["expo-router", "expo-font", "expo-web-browser"],
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser",
+      "expo-speech-recognition"
+    ],
     "experiments": {
       "typedRoutes": true
     },

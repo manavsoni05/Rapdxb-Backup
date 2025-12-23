@@ -79,6 +79,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - ExpoSpeechRecognition (3.0.1):
+    - ExpoModulesCore
   - ExpoSplashScreen (31.0.12):
     - ExpoModulesCore
   - ExpoSymbols (1.0.8):
@@ -1877,6 +1879,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNPermissions (5.4.4):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNReanimated (4.1.6):
     - hermes-engine
     - RCTRequired
@@ -2138,6 +2162,7 @@ DEPENDENCIES:
   - ExpoLinearGradient (from `../node_modules/expo-linear-gradient/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
   - ExpoModulesCore (from `../node_modules/expo-modules-core`)
+  - ExpoSpeechRecognition (from `../node_modules/expo-speech-recognition/ios`)
   - ExpoSplashScreen (from `../node_modules/expo-splash-screen/ios`)
   - ExpoSymbols (from `../node_modules/expo-symbols/ios`)
   - ExpoSystemUI (from `../node_modules/expo-system-ui/ios`)
@@ -2214,6 +2239,7 @@ DEPENDENCIES:
   - "RNCAsyncStorage (from `../node_modules/@react-native-async-storage/async-storage`)"
   - "RNDateTimePicker (from `../node_modules/@react-native-community/datetimepicker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
+  - RNPermissions (from `../node_modules/react-native-permissions`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
@@ -2257,6 +2283,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-linking/ios"
   ExpoModulesCore:
     :path: "../node_modules/expo-modules-core"
+  ExpoSpeechRecognition:
+    :path: "../node_modules/expo-speech-recognition/ios"
   ExpoSplashScreen:
     :path: "../node_modules/expo-splash-screen/ios"
   ExpoSymbols:
@@ -2408,6 +2436,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-community/datetimepicker"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
+  RNPermissions:
+    :path: "../node_modules/react-native-permissions"
   RNReanimated:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
@@ -2436,6 +2466,7 @@ SPEC CHECKSUMS:
   ExpoLinearGradient: 814a21fc4056c3cf606e4f19e31e47074c5b5a86
   ExpoLinking: 0d53100c60c39bf5f800f39839fde1e69652d4bc
   ExpoModulesCore: 77496909fd3c800f97f7f2007dd26aeac4bb3798
+  ExpoSpeechRecognition: 9ac72c7039a2af1e2ccc0eb42d960d6577cfa653
   ExpoSplashScreen: f2ec43307fd30dd7aaa9f08449268058ed19b9f7
   ExpoSymbols: a0e8217dc2789d9ed0f28b63a466fc5beafd5100
   ExpoSystemUI: 4611247a411f231229f7e04449856035bd18ba21
@@ -2511,6 +2542,7 @@ SPEC CHECKSUMS:
   RNCAsyncStorage: e85a99325df9eb0191a6ee2b2a842644c7eb29f4
   RNDateTimePicker: 6fdd63f5d1e0f21faf4cc8674957c52958a7efae
   RNGestureHandler: 6a488ce85c88e82d8610db1108daf04e9b2d5162
+  RNPermissions: 4f26f4ebc22d6d98e4922d5e1550a127343dd519
   RNReanimated: 43f611f1c85c90e0273df7399bf1536f8e2bd125
   RNScreens: dd61bc3a3e6f6901ad833efa411917d44827cf51
   RNSVG: 2825ee146e0f6a16221e852299943e4cceef4528
@@ -2518,6 +2550,6 @@ SPEC CHECKSUMS:
   Yoga: 3fd22c2cae22d7a2b0f0b538f55f7c2a17dc94d5
   ZXingObjC: 8898711ab495761b2dbbdec76d90164a6d7e14c5
 
-PODFILE CHECKSUM: 2076ba15fb6f05fbaf2e40fc843ca31ff4f53e57
+PODFILE CHECKSUM: 938005161dbce2270e3f2b4ddcf689633114ac03
 
 COCOAPODS: 1.16.2

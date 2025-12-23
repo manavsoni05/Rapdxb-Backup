@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInp
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Upload, Link, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic } from 'lucide-react-native';
+import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout } from 'lucide-react-native';
 import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -10,12 +10,20 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { requestMicrophonePermission } from '@/lib/permissions';
+import {
+  useSpeechRecognitionEvent,
+  ExpoSpeechRecognitionModule,
+  AudioEncodingAndroid,
+} from 'expo-speech-recognition';
+import AnimatedWave from '@/components/AnimatedWave';
 
 const { width } = Dimensions.get('window');
 
 const CREATE_POST_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-post';
 const CREATE_REEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-reel';
 const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-carousel';
+const CREATE_STORY_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-story';
 const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
 
 const PLATFORMS_POST = ['Instagram', 'Facebook', 'Twitter', 'Snapchat', 'All'];
@@ -200,7 +208,8 @@ const FEED_DATA = [
 
 export default function PostScreen() {
   const insets = useSafeAreaInsets();
-  const [contentType, setContentType] = useState<'post' | 'reel'>('post');
+  const [contentType, setContentType] = useState<'post' | 'reel' | 'story'>('post');
+  const [postType, setPostType] = useState<'single' | 'carousel'>('single');
   const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
@@ -210,7 +219,6 @@ export default function PostScreen() {
   const [tempDate, setTempDate] = useState<Date>(new Date());
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [mediaLink, setMediaLink] = useState('');
   const [uploadedVideos, setUploadedVideos] = useState<string[]>([]);
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [mediaOrder, setMediaOrder] = useState<string[]>([]);
@@ -218,12 +226,16 @@ export default function PostScreen() {
   const [isRecordingCaption, setIsRecordingCaption] = useState(false);
   const recognitionTitle = useRef<any>(null);
   const recognitionCaption = useRef<any>(null);
+  const lastResultIndexTitle = useRef<number>(0);
+  const lastResultIndexCaption = useRef<number>(0);
+  const [selectedBannerId, setSelectedBannerId] = useState('agXkA3Dw0zNEbW2VBY'); // Default
 
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState<number[]>([]);
   const [confirmedPosts, setConfirmedPosts] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingText, setLoadingText] = useState('Uploading media...');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
   const [notification, setNotification] = useState<{type: 'error' | 'success' | 'info'; message: string} | null>(null);
@@ -232,6 +244,7 @@ export default function PostScreen() {
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const floatAnim3 = useRef(new Animated.Value(0)).current;
+  const spinValue = useRef(new Animated.Value(0)).current;
 
   const showNotification = (type: 'error' | 'success' | 'info', message: string) => {
     setNotification({ type, message });
@@ -249,6 +262,38 @@ export default function PostScreen() {
       }),
     ]).start(() => setNotification(null));
   };
+  
+  // Loading text animation effect
+  useEffect(() => {
+    if (!isSubmitting) return;
+    
+    const textSequence = ['Uploading media...', 'Processing...', 'Almost done...'];
+    let currentIndex = 0;
+    
+    const interval = setInterval(() => {
+      currentIndex = (currentIndex + 1) % textSequence.length;
+      setLoadingText(textSequence[currentIndex]);
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, [isSubmitting]);
+  
+  // Spinner animation effect
+  useEffect(() => {
+    if (!isSubmitting) {
+      spinValue.setValue(0);
+      return;
+    }
+    
+    Animated.loop(
+      Animated.timing(spinValue, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+        easing: (t) => t, // Linear easing
+      })
+    ).start();
+  }, [isSubmitting]);
   const sliderAnim = useRef(new Animated.Value(0)).current;
 
   const fetchConnectedPlatforms = useCallback(async () => {
@@ -293,6 +338,71 @@ export default function PostScreen() {
     }, [fetchConnectedPlatforms])
   );
 
+  // When switching to single post, keep only last photo and remove all videos
+  useEffect(() => {
+    if (contentType === 'post' && postType === 'single') {
+      // Remove all videos for single post
+      if (uploadedVideos.length > 0) {
+        setUploadedVideos([]);
+      }
+      // Keep only the last photo if multiple exist
+      if (uploadedPhotos.length > 1) {
+        const lastPhoto = uploadedPhotos[uploadedPhotos.length - 1];
+        setUploadedPhotos([lastPhoto]);
+        setMediaOrder([lastPhoto]);
+      } else if (uploadedPhotos.length === 1) {
+        setMediaOrder([uploadedPhotos[0]]);
+      }
+    }
+  }, [postType, contentType]);
+
+  // Speech recognition event listeners for mobile
+  useSpeechRecognitionEvent('result', (event) => {
+    if (isRecordingTitle) {
+      const transcript = event.results[0]?.transcript || '';
+      // Since interimResults is false, we only get final results
+      if (transcript) {
+        setTitle(prev => prev + transcript + ' ');
+      }
+    } else if (isRecordingCaption) {
+      const transcript = event.results[0]?.transcript || '';
+      // Since interimResults is false, we only get final results
+      if (transcript) {
+        setCaption(prev => prev + transcript + ' ');
+      }
+    }
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    // Auto-stop when recognition ends
+    if (isRecordingTitle) {
+      setIsRecordingTitle(false);
+      lastResultIndexTitle.current = 0;
+    }
+    if (isRecordingCaption) {
+      setIsRecordingCaption(false);
+      lastResultIndexCaption.current = 0;
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (event) => {
+    console.error('Speech recognition error:', event.error);
+    
+    // Handle specific error types
+    if (event.error === 'language-not-supported') {
+      showNotification('error', 'Speech recognition is not available in your language. Please check your device settings.');
+    } else if (event.error === 'not-allowed') {
+      showNotification('error', 'Microphone permission denied. Please enable it in settings.');
+    } else {
+      showNotification('error', 'Speech recognition failed. Please try again.');
+    }
+    
+    setIsRecordingTitle(false);
+    setIsRecordingCaption(false);
+    lastResultIndexTitle.current = 0;
+    lastResultIndexCaption.current = 0;
+  });
+
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -300,18 +410,16 @@ export default function PostScreen() {
         recognitionTitle.current = new SpeechRecognition();
         recognitionTitle.current.continuous = true;
         recognitionTitle.current.interimResults = true;
-        recognitionTitle.current.lang = 'en-US';
+        recognitionTitle.current.lang = 'en';
 
         recognitionTitle.current.onresult = (event: any) => {
-          let interimTranscript = '';
           let finalTranscript = '';
 
+          // Only process new results since last index
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
               finalTranscript += transcript + ' ';
-            } else {
-              interimTranscript += transcript;
             }
           }
 
@@ -319,28 +427,34 @@ export default function PostScreen() {
             setTitle(prev => prev + finalTranscript);
           }
         };
+        
+        recognitionTitle.current.onstart = () => {
+          lastResultIndexTitle.current = 0;
+        };
 
         recognitionCaption.current = new SpeechRecognition();
         recognitionCaption.current.continuous = true;
         recognitionCaption.current.interimResults = true;
-        recognitionCaption.current.lang = 'en-US';
+        recognitionCaption.current.lang = 'en';
 
         recognitionCaption.current.onresult = (event: any) => {
-          let interimTranscript = '';
           let finalTranscript = '';
 
+          // Only process new results since last index
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
               finalTranscript += transcript + ' ';
-            } else {
-              interimTranscript += transcript;
             }
           }
 
           if (finalTranscript) {
             setCaption(prev => prev + finalTranscript);
           }
+        };
+        
+        recognitionCaption.current.onstart = () => {
+          lastResultIndexCaption.current = 0;
         };
       }
     }
@@ -355,39 +469,155 @@ export default function PostScreen() {
     };
   }, []);
 
-  const toggleTitleRecording = () => {
+  const toggleTitleRecording = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
     if (!isRecordingTitle) {
-      if (recognitionTitle.current) {
-        recognitionTitle.current.start();
-        setIsRecordingTitle(true);
+      // Stop caption recording if it's active
+      if (isRecordingCaption) {
+        if (Platform.OS === 'web' && recognitionCaption.current) {
+          recognitionCaption.current.stop();
+        } else if (Platform.OS !== 'web') {
+          await ExpoSpeechRecognitionModule.stop();
+        }
+        setIsRecordingCaption(false);
+      }
+
+      // For mobile platforms, request permission first
+      if (Platform.OS !== 'web') {
+        const hasPermission = await requestMicrophonePermission();
+        if (!hasPermission) {
+          return;
+        }
+
+        try {
+          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+          if (!result.granted) {
+            Alert.alert('Permission Required', 'Microphone permission is required for voice input.');
+            return;
+          }
+
+          // iOS needs specific settings for reliable recognition
+          const options = {
+            lang: Platform.OS === 'ios' ? 'en-US' : undefined,
+            interimResults: false,
+            maxAlternatives: 1,
+            continuous: Platform.OS === 'ios' ? false : true,
+            requiresOnDeviceRecognition: Platform.OS === 'ios' ? true : false,
+            addsPunctuation: true,
+            contextualStrings: [],
+          };
+          
+          await ExpoSpeechRecognitionModule.start(options);
+          setIsRecordingTitle(true);
+          lastResultIndexTitle.current = 0;
+        } catch (error: any) {
+          console.error('Error starting speech recognition:', error);
+          const errorMsg = error?.message || 'Failed to start voice recognition';
+          showNotification('error', errorMsg);
+          setIsRecordingTitle(false);
+        }
+      } else {
+        // Web speech recognition
+        if (recognitionTitle.current) {
+          try {
+            lastResultIndexTitle.current = 0;
+            recognitionTitle.current.start();
+            setIsRecordingTitle(true);
+          } catch (error: any) {
+            console.error('Error starting speech recognition:', error);
+            showNotification('error', 'Failed to start voice recognition. Please try again.');
+            setIsRecordingTitle(false);
+          }
+        }
       }
     } else {
-      if (recognitionTitle.current) {
+      // Stop recording
+      if (Platform.OS === 'web' && recognitionTitle.current) {
         recognitionTitle.current.stop();
-        setIsRecordingTitle(false);
+      } else if (Platform.OS !== 'web') {
+        await ExpoSpeechRecognitionModule.stop();
       }
+      setIsRecordingTitle(false);
+      lastResultIndexTitle.current = 0;
     }
   };
 
-  const toggleCaptionRecording = () => {
+  const toggleCaptionRecording = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
     if (!isRecordingCaption) {
-      if (recognitionCaption.current) {
-        recognitionCaption.current.start();
-        setIsRecordingCaption(true);
+      // Stop title recording if it's active
+      if (isRecordingTitle) {
+        if (Platform.OS === 'web' && recognitionTitle.current) {
+          recognitionTitle.current.stop();
+        } else if (Platform.OS !== 'web') {
+          await ExpoSpeechRecognitionModule.stop();
+        }
+        setIsRecordingTitle(false);
+      }
+
+      // For mobile platforms, request permission first
+      if (Platform.OS !== 'web') {
+        const hasPermission = await requestMicrophonePermission();
+        if (!hasPermission) {
+          return;
+        }
+
+        try {
+          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+          if (!result.granted) {
+            Alert.alert('Permission Required', 'Microphone permission is required for voice input.');
+            return;
+          }
+
+          // iOS needs specific settings for reliable recognition
+          const options = {
+            lang: Platform.OS === 'ios' ? 'en-US' : undefined,
+            interimResults: false,
+            maxAlternatives: 1,
+            continuous: Platform.OS === 'ios' ? false : true,
+            requiresOnDeviceRecognition: Platform.OS === 'ios' ? true : false,
+            addsPunctuation: true,
+            contextualStrings: [],
+          };
+          
+          await ExpoSpeechRecognitionModule.start(options);
+          setIsRecordingCaption(true);
+          lastResultIndexCaption.current = 0;
+        } catch (error: any) {
+          console.error('Error starting speech recognition:', error);
+          const errorMsg = error?.message || 'Failed to start voice recognition';
+          showNotification('error', errorMsg);
+          setIsRecordingCaption(false);
+        }
+      } else {
+        // Web speech recognition
+        if (recognitionCaption.current) {
+          try {
+            lastResultIndexCaption.current = 0;
+            recognitionCaption.current.start();
+            setIsRecordingCaption(true);
+          } catch (error: any) {
+            console.error('Error starting speech recognition:', error);
+            showNotification('error', 'Failed to start voice recognition. Please try again.');
+            setIsRecordingCaption(false);
+          }
+        }
       }
     } else {
-      if (recognitionCaption.current) {
+      // Stop recording
+      if (Platform.OS === 'web' && recognitionCaption.current) {
         recognitionCaption.current.stop();
-        setIsRecordingCaption(false);
+      } else if (Platform.OS !== 'web') {
+        await ExpoSpeechRecognitionModule.stop();
       }
+      setIsRecordingCaption(false);
+      lastResultIndexCaption.current = 0;
     }
   };
 
@@ -431,13 +661,13 @@ export default function PostScreen() {
     router.replace('/(tabs)/home');
   };
 
-  const handleToggle = (type: 'post' | 'reel') => {
+  const handleToggle = (type: 'post' | 'reel' | 'story') => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
 
     Animated.spring(sliderAnim, {
-      toValue: type === 'post' ? 0 : 1,
+      toValue: type === 'post' ? 0 : type === 'reel' ? 1 : 2,
       useNativeDriver: false,
       tension: 65,
       friction: 8,
@@ -448,11 +678,11 @@ export default function PostScreen() {
     setCaption('');
     setTags([]);
     setTagInput('');
-    setMediaLink('');
     setUploadedVideos([]);
     setUploadedPhotos([]);
     setScheduleDate(null);
     setMediaOrder([]);
+    setSelectedBannerId('agXkA3Dw0zNEbW2VBY'); // Reset to default
   };
 
   const handleAddTag = () => {
@@ -462,21 +692,6 @@ export default function PostScreen() {
       }
       setTags([...tags, tagInput.trim()]);
       setTagInput('');
-    }
-  };
-
-  const handleMediaLinkChange = (text: string) => {
-    setMediaLink(text);
-    if (text.trim()) {
-      if (uploadedPhotos.length) {
-        setUploadedPhotos([]);
-      }
-      if (uploadedVideos.length) {
-        setUploadedVideos([]);
-      }
-      if (mediaOrder.length) {
-        setMediaOrder([]);
-      }
     }
   };
 
@@ -519,53 +734,65 @@ export default function PostScreen() {
       mediaTypes = ImagePicker.MediaTypeOptions.Videos;
     }
 
+    // For single post, only allow one image selection
+    const isSinglePost = contentType === 'post' && postType === 'single';
+    const selectionLimit = isSinglePost ? 1 : 10;
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes,
       allowsEditing: true,
       quality: 1,
-      allowsMultipleSelection: true,
-      selectionLimit: 10,
+      allowsMultipleSelection: !isSinglePost,
+      selectionLimit: selectionLimit,
     });
 
     if (!result.canceled && result.assets && result.assets.length) {
       const uris = result.assets.map(asset => asset.uri).filter(Boolean) as string[];
       const uniqueUris = Array.from(new Set(uris));
 
+      // For single post, only keep the last selected image
+      const finalUris = isSinglePost && mediaType === 'photo' ? [uniqueUris[uniqueUris.length - 1]] : uniqueUris;
+
       if (mediaType === 'video') {
         if (contentType === 'post') {
           setUploadedVideos(prev => {
             const next = [...prev];
-            uniqueUris.forEach(uri => {
+            finalUris.forEach(uri => {
               if (!next.includes(uri)) {
                 next.push(uri);
               }
             });
             return next;
           });
-          addMediaToOrder(uniqueUris, 'append');
+          addMediaToOrder(finalUris, 'append');
         } else {
-          setUploadedVideos(uniqueUris);
+          setUploadedVideos(finalUris);
           setUploadedPhotos([]);
-          addMediaToOrder(uniqueUris, 'replace');
+          addMediaToOrder(finalUris, 'replace');
         }
       } else {
-        setUploadedPhotos(prev => {
-          const next = [...prev];
-          uniqueUris.forEach(uri => {
-            if (!next.includes(uri)) {
-              next.push(uri);
-            }
-          });
-          return next;
-        });
-        if (contentType === 'post') {
-          addMediaToOrder(uniqueUris, 'append');
+        // For single post, replace instead of append
+        if (isSinglePost) {
+          setUploadedPhotos(finalUris);
+          addMediaToOrder(finalUris, 'replace');
         } else {
-          addMediaToOrder(uniqueUris, 'replace');
-          setUploadedVideos([]);
+          setUploadedPhotos(prev => {
+            const next = [...prev];
+            finalUris.forEach(uri => {
+              if (!next.includes(uri)) {
+                next.push(uri);
+              }
+            });
+            return next;
+          });
+          if (contentType === 'post') {
+            addMediaToOrder(finalUris, 'append');
+          } else {
+            addMediaToOrder(finalUris, 'replace');
+            setUploadedVideos([]);
+          }
         }
       }
-      setMediaLink('');
     }
   };
 
@@ -692,10 +919,12 @@ export default function PostScreen() {
     }
     
     // Check if it's a carousel post - only Instagram allowed for carousel
-    const isCarousel = contentType === 'post' && (uploadedPhotos.length + uploadedVideos.length) > 1;
-    const disabledPlatforms = isCarousel ? ['youtube', 'tiktok', 'snapchat', 'twitter', 'facebook'] : [];
+    const isCarousel = contentType === 'post' && postType === 'carousel';
+    // Check if it's a story - TikTok and YouTube don't support stories
+    const isStory = contentType === 'story';
+    const disabledPlatforms = isCarousel ? ['youtube', 'tiktok', 'snapchat', 'twitter', 'facebook'] : isStory ? ['youtube', 'tiktok'] : [];
     
-    // Don't allow toggling disabled platforms (non-Instagram for carousel)
+    // Don't allow toggling disabled platforms
     if (disabledPlatforms.includes(platformId)) {
       return;
     }
@@ -720,14 +949,13 @@ export default function PostScreen() {
 
     // Validation for required fields
     const hasUploadedMedia = mediaOrder.length > 0 || uploadedPhotos.length > 0 || uploadedVideos.length > 0;
-    const hasLink = Boolean(mediaLink.trim());
 
-    if (!hasUploadedMedia && !hasLink) {
-      showNotification('error', 'Missing Media: Please upload a media file or provide a media link.');
+    if (!hasUploadedMedia) {
+      showNotification('error', 'Missing Media: Please upload a media file.');
       return;
     }
 
-    if (contentType === 'post' && !title.trim()) {
+    if ((contentType === 'post' || contentType === 'story') && !title.trim()) {
       showNotification('error', 'Title Required: Please enter a title for your post.');
       return;
     }
@@ -737,7 +965,7 @@ export default function PostScreen() {
 
     try {
       setIsSubmitting(true);
-      showNotification('info', 'Post in Progress...');
+      setLoadingText('Uploading media...');
 
       const storedUserId = await AsyncStorage.getItem('email');
       if (!storedUserId) {
@@ -754,9 +982,7 @@ export default function PostScreen() {
         ? combinedMediaUris.length > 1
           ? `local:carousel(${combinedMediaUris.length})`
           : `local:${combinedMediaUris[0]}`
-        : mediaLink.trim()
-          ? `link:${mediaLink.trim()}`
-          : 'none';
+        : 'none';
 
       const appendedMediaMeta: { index: number; uri: string; fileName: string; mimeType: string }[] = [];
 
@@ -796,34 +1022,6 @@ export default function PostScreen() {
           formData.append('mediaCount', String(appendedMediaMeta.length));
           formData.append('carouselMediaMeta', JSON.stringify(appendedMediaMeta));
         }
-      } else if (mediaLink.trim()) {
-        try {
-          const { base64Data, mimeType, fileName, fileUri, cleanupUri, blob } = await convertUriToBase64(mediaLink.trim(), 'application/octet-stream');
-          resolvedMimeType = mimeType;
-          if (cleanupUri) {
-            pendingCleanups.push(cleanupUri);
-          }
-          if (Platform.OS === 'web') {
-            if (blob) {
-              const fileObject = typeof File !== 'undefined' ? new File([blob], fileName, { type: mimeType }) : blob;
-              formData.append('mediaUrl', fileObject, fileName);
-            } else {
-              formData.append('mediaUrl', `data:${mimeType};base64,${base64Data}`);
-            }
-          } else if (fileUri) {
-            formData.append('mediaUrl', {
-              uri: fileUri,
-              type: mimeType,
-              name: fileName,
-            } as any);
-          } else {
-            formData.append('mediaUrl', `data:${mimeType};base64,${base64Data}`);
-          }
-          formData.append('mediaFileName', fileName);
-          formData.append('mediaMimeType', mimeType);
-        } catch (conversionError) {
-          formData.append('mediaUrl', JSON.stringify({ url: mediaLink.trim() }));
-        }
       }
 
       const localizedSchedule = scheduleDate ? scheduleDate.toISOString() : 'Not scheduled';
@@ -832,17 +1030,25 @@ export default function PostScreen() {
 
       // Determine if this is a reel
       const hasUploadedVideo = appendedMediaMeta.some(item => item.mimeType.startsWith('video/'));
-      const linkLooksLikeVideo = mediaLink.trim().length > 0 && /\.(mp4|mov|m4v|avi|wmv|mkv)$/i.test(mediaLink.trim());
       const shouldUseReel = Boolean(
         contentType === 'reel' ||
         hasUploadedVideo ||
-        (resolvedMimeType && resolvedMimeType.startsWith('video/')) ||
-        linkLooksLikeVideo
+        (resolvedMimeType && resolvedMimeType.startsWith('video/'))
       );
 
       let titlePromptPayload, captionPromptPayload;
 
-      if (shouldUseReel) {
+      if (contentType === 'story') {
+        // Story-specific prompts (title only, no caption)
+        titlePromptPayload = [
+          {
+            role: 'user',
+            content: `You are a bilingual (English/Arabic) social media post title generation agent for hip-hop content. Your job is to generate high-performing, platform-ready post titles for Instagram and other platforms, using the most viral, authentic, and community-driven tone in both languages. Use ALL CAPS strategically for energy and emphasis. Blend infectious hip-hop hype with cultural authority. Mix street authenticity, modern slang, and professional presentation. Short, punchy, headline-style titles. Always sound like the most connected, in-the-know voice in the scene. Use strategic emoji (🔥💯⚡🎵🎤) only if it fits the style. Use Modern Standard Arabic mixed with contemporary Arabic social media language. Integrate English music industry terms and artist names. Use Arabic numerals and trending Arabic hashtags. Balance traditional Arabic with modern digital communication. Maintain cultural authenticity and accessibility. ENGLISH TITLE: Bold, attention-grabbing, under 60 characters. Include artist name and track or video type if relevant (artist name always in English). Use power words such as DROPS, RELEASES, PREMIERES, BREAKS RECORDS, and similar terms. Immediate impact and recognition. Example: NF'S NEW ALBUM HAS THE MOST PRE-SAVES OF ANY RAP ALBUM ON SPOTIFY. ARABIC TITLE: Direct translation of the English title with the same energy. Artist name always in English. Use traditional Arabic script. Example: NF الجديد يحقق أعلى عدد من الحجوزات المسبقة بين ألبومات الراب على سبوتيفاي. OUTPUT: Always output both English and Arabic titles clearly labeled. No additional text, explanations, or formatting is needed in the output. USER PROVIDED TITLE: ${title || 'Not provided'}`,
+          },
+        ];
+        // Story doesn't need caption prompt
+        captionPromptPayload = null;
+      } else if (shouldUseReel) {
         // Reel-specific prompts
         titlePromptPayload = [
           {
@@ -862,25 +1068,27 @@ export default function PostScreen() {
         titlePromptPayload = [
           {
             role: 'user',
-            content: `TASK: Generate a bilingual (English/Arabic) social media post title following the rules below. TONE OF VOICE: Use ALL CAPS strategically for energy and emphasis. Blend hype with authority and confidence. Mix modern slang, cultural relevance, and professional presentation. Keep titles short, punchy, and headline-style. Sound like the most connected voice in the space. Use emojis when appropriate (🔥💯⚡🎯📢). ARABIC LANGUAGE RULES: Use Modern Standard Arabic mixed with contemporary Arabic social media style. Include English names, brands, or terms dynamically derived from context when relevant. Maintain cultural authenticity and accessibility. POST TITLE STRUCTURE: ENGLISH TITLE must be bold, under 60 characters, include a relevant name, brand, or subject derived from the provided context, and use strong action words like DROPS, LAUNCHES, RELEASES, ANNOUNCES, GOES LIVE, BREAKS RECORDS. ARABIC TITLE must directly reflect the English title with matching energy and use traditional Arabic script. OUTPUT FORMAT: Provide only these two lines: ENGLISH TITLE: [title] ARABIC TITLE: [title]. CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}. The user notes: "${mediaLink || (primaryMediaUri ? 'Local media selected' : 'No media link')}". Generate one English title and one Arabic title.`,
+            content: `TASK: Generate a bilingual (English/Arabic) social media post title following the rules below. TONE OF VOICE: Use ALL CAPS strategically for energy and emphasis. Blend hype with authority and confidence. Mix modern slang, cultural relevance, and professional presentation. Keep titles short, punchy, and headline-style. Sound like the most connected voice in the space. Use emojis when appropriate (🔥💯⚡🎯📢). ARABIC LANGUAGE RULES: Use Modern Standard Arabic mixed with contemporary Arabic social media style. Include English names, brands, or terms dynamically derived from context when relevant. Maintain cultural authenticity and accessibility. POST TITLE STRUCTURE: ENGLISH TITLE must be bold, under 60 characters, include a relevant name, brand, or subject derived from the provided context, and use strong action words like DROPS, LAUNCHES, RELEASES, ANNOUNCES, GOES LIVE, BREAKS RECORDS. ARABIC TITLE must directly reflect the English title with matching energy and use traditional Arabic script. OUTPUT FORMAT: Provide only these two lines: ENGLISH TITLE: [title] ARABIC TITLE: [title]. CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}. Generate one English title and one Arabic title.`,
           },
         ];
 
         captionPromptPayload = [
           {
             role: 'user',
-            content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media post caption generation agent. Generate high-performing, platform-ready post captions for Instagram and cross-platform repurposing, using a viral, authentic, community-driven tone in both languages. TONE OF VOICE: Blend hype with cultural authority, mix modern slang, contextual authenticity, and professional presentation, keep lines short, punchy, direct, and meme-like when helpful, always sound in-the-know, and use strategic emoji (🔥💯⚡🚀📢) for energy without leading with a call to action. ARABIC LANGUAGE ANALYSIS: Use Modern Standard Arabic mixed with contemporary Arabic social media language, integrate relevant English industry terms and names dynamically derived from context, use Arabic numerals and trending Arabic hashtags, balance traditional Arabic with modern digital communication, and maintain cultural authenticity and accessibility. POST CAPTION STRUCTURE: Provide two lines with no labels: first the English caption (1-2 punchy lines), second the Arabic caption mirroring the English tone and including relevant names in English. After that return a third line with space-separated hashtags that always include the primary name or entity as a hashtag (formatted like #ENTITYNAME) and optionally 1-2 general contextual hashtags (e.g. #update, #launch, #trending). CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}, Media Link = ${mediaLink || (primaryMediaUri ? 'Local media selected' : 'Not provided')}. The audience should feel like they are getting exclusive access. Return only the three lines of output without additional labels or explanations.`,
+            content: `GENERAL INSTRUCTIONS: You are a bilingual (English/Arabic) social media post caption generation agent. Generate high-performing, platform-ready post captions for Instagram and cross-platform repurposing, using a viral, authentic, community-driven tone in both languages. TONE OF VOICE: Blend hype with cultural authority, mix modern slang, contextual authenticity, and professional presentation, keep lines short, punchy, direct, and meme-like when helpful, always sound in-the-know, and use strategic emoji (🔥💯⚡🚀📢) for energy without leading with a call to action. ARABIC LANGUAGE ANALYSIS: Use Modern Standard Arabic mixed with contemporary Arabic social media language, integrate relevant English industry terms and names dynamically derived from context, use Arabic numerals and trending Arabic hashtags, balance traditional Arabic with modern digital communication, and maintain cultural authenticity and accessibility. POST CAPTION STRUCTURE: Provide two lines with no labels: first the English caption (1-2 punchy lines), second the Arabic caption mirroring the English tone and including relevant names in English. After that return a third line with space-separated hashtags that always include the primary name or entity as a hashtag (formatted like #ENTITYNAME) and optionally 1-2 general contextual hashtags (e.g. #update, #launch, #trending). CONTEXT: Content Type = ${contentType.toUpperCase()}, Working Title = ${title || 'Not provided'}, Caption Draft = ${caption || 'Not provided'}, Tags = ${tagSummary}, Scheduled For = ${localizedSchedule}, Platforms = ${platformSummary}. The audience should feel like they are getting exclusive access. Return only the three lines of output without additional labels or explanations.`,
           },
         ];
       }
 
       formData.append('titlePromt', JSON.stringify(titlePromptPayload));
-      formData.append('captionPromt', JSON.stringify(captionPromptPayload));
+      if (captionPromptPayload) {
+        formData.append('captionPromt', JSON.stringify(captionPromptPayload));
+      }
       formData.append('max_tokens', '1024');
       formData.append('email', storedUserId);
       
-      // Append tags array for backend processing
-      if (tags.length > 0) {
+      // Append tags array for backend processing (not for story)
+      if (tags.length > 0 && contentType !== 'story') {
         tags.forEach((tag) => {
           formData.append('tags', `@${tag}`);
         });
@@ -897,7 +1105,7 @@ export default function PostScreen() {
       
       // Append each platform individually to create an array (using 'Platforms' to match backend)
       // Filter platforms: carousel only Instagram, reels/posts allow all
-      const isCarouselSubmission = contentType === 'post' && appendedMediaMeta.length > 1;
+      const isCarouselSubmission = contentType === 'post' && postType === 'carousel';
       const disabledPlatformsForSubmission = isCarouselSubmission ? ['youtube', 'tiktok', 'snapchat', 'twitter', 'facebook'] : [];
       const filteredPlatforms = selectedPlatforms.filter(p => !disabledPlatformsForSubmission.includes(p));
       const platformsToSend = filteredPlatforms.length == 1 ? [...filteredPlatforms,  ''] : filteredPlatforms
@@ -905,15 +1113,22 @@ export default function PostScreen() {
         formData.append('Platforms', platform);
       });
 
-      const shouldUseCarousel = contentType === 'post' && appendedMediaMeta.length > 1;
+      const shouldUseCarousel = contentType === 'post' && postType === 'carousel';
 
       formData.append('isReel', shouldUseReel ? 'true' : 'false');
       formData.append('isCarousel', shouldUseCarousel ? 'true' : 'false');
       if (shouldUseCarousel) {
         formData.append('carouselOrder', JSON.stringify(appendedMediaMeta.map(item => item.index)));
       }
+      
+      // Add bannerId for story
+      if (contentType === 'story') {
+        formData.append('bannerId', selectedBannerId);
+      }
 
-      const targetEndpoint = shouldUseCarousel
+      const targetEndpoint = contentType === 'story'
+        ? CREATE_STORY_ENDPOINT
+        : shouldUseCarousel
         ? CREATE_CAROUSEL_ENDPOINT
         : (shouldUseReel ? CREATE_REEL_ENDPOINT : CREATE_POST_ENDPOINT);
 
@@ -954,11 +1169,24 @@ export default function PostScreen() {
           hour12: true
         };
         const formattedDate = scheduleDate.toLocaleString('en-US', options);
-        const contentTypeText = contentType === 'reel' ? 'reel' : 'post';
-        notificationMessage = `Your ${contentTypeText} will be posted on ${formattedDate}`;
+        if (contentType === 'story') {
+          notificationMessage = `Story is scheduled for ${formattedDate}`;
+        } else {
+          const contentTypeText = contentType === 'reel' ? 'reel' : 'post';
+          notificationMessage = `Your ${contentTypeText} will be posted on ${formattedDate}`;
+        }
       } else {
-        notificationMessage = 'Post is Live Now! 🎉';
+        if (contentType === 'story') {
+          notificationMessage = 'Story is live';
+        } else {
+          const contentTypeText = contentType === 'reel' ? 'Reel' : 'Post';
+          notificationMessage = `${contentTypeText} is Live Now! 🎉`;
+        }
       }
+      
+      // Show posted message briefly before hiding loading
+      setLoadingText('Posted!');
+      await new Promise(resolve => setTimeout(resolve, 800));
       
       showNotification('success', notificationMessage);
 
@@ -966,7 +1194,6 @@ export default function PostScreen() {
       setCaption('');
       setTags([]);
       setTagInput('');
-      setMediaLink('');
       setUploadedVideos([]);
       setUploadedPhotos([]);
       setScheduleDate(null);
@@ -976,6 +1203,7 @@ export default function PostScreen() {
     } catch (error) {
       console.error('Failed to create post', error);
       const errorMessage = error instanceof Error ? error.message : 'We were unable to submit your post. Please try again.';
+      setIsSubmitting(false);
       showNotification('error', errorMessage);
     } finally {
       if (pendingCleanups.length && Platform.OS !== 'web') {
@@ -1041,8 +1269,8 @@ export default function PostScreen() {
   });
 
   const sliderPosition = sliderAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [4, (width - 32) / 2 + 4],
+    inputRange: [0, 1, 2],
+    outputRange: [4, (width - 32) / 3 + 4, ((width - 32) / 3) * 2 + 4],
   });
 
   return (
@@ -1110,12 +1338,12 @@ export default function PostScreen() {
             styles.pageTitleBold,
             {
               color: sliderAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['#60a5fa', '#fbbf24'],
+                inputRange: [0, 1, 2],
+                outputRange: ['#60a5fa', '#fbbf24', '#ec4899'],
               }),
             },
           ]}>
-            {contentType === 'post' ? 'Post' : 'Reel'}
+            {contentType === 'post' ? 'Post' : contentType === 'reel' ? 'Reel' : 'Story'}
           </Animated.Text>
         </View>
 
@@ -1126,7 +1354,7 @@ export default function PostScreen() {
               left: sliderPosition,
             }]}>
               <LinearGradient
-                colors={contentType === 'post' ? ['#60a5fa', '#3b82f6'] : ['#fbbf24', '#f59e0b']}
+                colors={contentType === 'post' ? ['#60a5fa', '#3b82f6'] : contentType === 'reel' ? ['#fbbf24', '#f59e0b'] : ['#ec4899', '#db2777']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.toggleSliderInner}
@@ -1152,10 +1380,84 @@ export default function PostScreen() {
                 Reel
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.toggleOption}
+              onPress={() => handleToggle('story')}
+              activeOpacity={0.8}
+            >
+              <Plus color={contentType === 'story' ? '#3b82f6' : 'rgba(255, 255, 255, 0.4)'} size={18} strokeWidth={2.5} />
+              <Text style={[styles.toggleText, contentType === 'story' && styles.toggleTextActiveStory]}>
+                Story
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.inputSection}>
+          {contentType === 'post' && (
+            <LinearGradient
+              colors={['#ec4899', '#db2777']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.postTypeCard}
+            >
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.labelDark}>Post Type</Text>
+                </View>
+                <View style={styles.postTypeOptionsContainer}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={[
+                      styles.postTypeOption,
+                      postType === 'single' && styles.postTypeOptionSelected,
+                    ]}
+                    onPress={() => {
+                      if (Platform.OS !== 'web') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setPostType('single');
+                    }}
+                  >
+                    <View style={styles.radioButton}>
+                      {postType === 'single' && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <Text style={[
+                      styles.postTypeLabel,
+                      postType === 'single' && styles.postTypeLabelSelected,
+                    ]}>
+                      Single Post
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={[
+                      styles.postTypeOption,
+                      postType === 'carousel' && styles.postTypeOptionSelected,
+                    ]}
+                    onPress={() => {
+                      if (Platform.OS !== 'web') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setPostType('carousel');
+                    }}
+                  >
+                    <View style={styles.radioButton}>
+                      {postType === 'carousel' && <View style={styles.radioButtonInner} />}
+                    </View>
+                    <Text style={[
+                      styles.postTypeLabel,
+                      postType === 'carousel' && styles.postTypeLabelSelected,
+                    ]}>
+                      Carousel Post
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </LinearGradient>
+          )}
+          
           <LinearGradient
             colors={['#60a5fa', '#3b82f6']}
             start={{ x: 0, y: 0 }}
@@ -1171,21 +1473,97 @@ export default function PostScreen() {
               </View>
               {contentType === 'post' ? (
                 <View style={styles.uploadButtonsContainer}>
-                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
-                    <Video color="#000000" size={20} strokeWidth={2.5} />
-                    <Text style={styles.uploadButtonText}>Upload Video</Text>
-                  </TouchableOpacity>
+                  {postType === 'carousel' && (
+                    <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
+                      <Video color="#000000" size={20} strokeWidth={2.5} />
+                      <Text style={styles.uploadButtonText}>Upload Video</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('photo')}>
                     <ImageIcon color="#000000" size={20} strokeWidth={2.5} />
-                    <Text style={styles.uploadButtonText}>Upload Photo</Text>
+                    <Text style={styles.uploadButtonText}>{postType === 'single' ? 'Upload Photo (1 only)' : 'Upload Photo'}</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
+              ) : contentType === 'reel' ? (
                 <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
                   <Video color="#000000" size={20} strokeWidth={2.5} />
                   <Text style={styles.uploadButtonText}>Upload Video File</Text>
                 </TouchableOpacity>
-              )}
+              ) : (contentType === 'story' ? (
+                <>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('photo')}>
+                    <ImageIcon color="#000000" size={20} strokeWidth={2.5} />
+                    <Text style={styles.uploadButtonText}>Upload Photo</Text>
+                  </TouchableOpacity>
+                  <View style={styles.dividerContainer}>
+                    <View style={styles.dividerLineDark} />
+                    <Text style={styles.dividerTextDark}>OR</Text>
+                    <View style={styles.dividerLineDark} />
+                  </View>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
+                    <Video color="#000000" size={20} strokeWidth={2.5} />
+                    <Text style={styles.uploadButtonText}>Upload Video</Text>
+                  </TouchableOpacity>
+                  
+                  <View style={styles.storyStyleSection}>
+                    <Text style={styles.storyStyleHeading}>Story Style</Text>
+                    <View style={styles.bannerPillsContainer}>
+                      <TouchableOpacity 
+                        activeOpacity={0.7} 
+                        style={[styles.bannerPill, selectedBannerId === 'A37YJe5q03WXZmpvWK' && styles.bannerPillSelected]}
+                        onPress={() => {
+                          if (Platform.OS !== 'web') {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          }
+                          setSelectedBannerId('A37YJe5q03WXZmpvWK');
+                        }}
+                      >
+                        <Square color={selectedBannerId === 'A37YJe5q03WXZmpvWK' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
+                        <Text style={[styles.bannerPillText, selectedBannerId === 'A37YJe5q03WXZmpvWK' && styles.bannerPillTextSelected]}>Square</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        activeOpacity={0.7} 
+                        style={[styles.bannerPill, selectedBannerId === 'E9YaWrZMql3YZnRd74' && styles.bannerPillSelected]}
+                        onPress={() => {
+                          if (Platform.OS !== 'web') {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          }
+                          setSelectedBannerId('E9YaWrZMql3YZnRd74');
+                        }}
+                      >
+                        <Maximize2 color={selectedBannerId === 'E9YaWrZMql3YZnRd74' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
+                        <Text style={[styles.bannerPillText, selectedBannerId === 'E9YaWrZMql3YZnRd74' && styles.bannerPillTextSelected]}>Portrait</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        activeOpacity={0.7} 
+                        style={[styles.bannerPill, selectedBannerId === 'agXkA3Dw0zNEbW2VBY' && styles.bannerPillSelected]}
+                        onPress={() => {
+                          if (Platform.OS !== 'web') {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          }
+                          setSelectedBannerId('agXkA3Dw0zNEbW2VBY');
+                        }}
+                      >
+                        <Layout color={selectedBannerId === 'agXkA3Dw0zNEbW2VBY' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
+                        <Text style={[styles.bannerPillText, selectedBannerId === 'agXkA3Dw0zNEbW2VBY' && styles.bannerPillTextSelected]}>Default</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.uploadButtonsContainer}>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('photo')}>
+                    <ImageIcon color="#000000" size={20} strokeWidth={2.5} />
+                    <Text style={styles.uploadButtonText}>Upload Photo</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
+                    <Video color="#000000" size={20} strokeWidth={2.5} />
+                    <Text style={styles.uploadButtonText}>Upload Video</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
               {(uploadedVideos.length > 0 || uploadedPhotos.length > 0) && (
                 <View style={styles.uploadedFilesContainer}>
                   {uploadedVideos.map((uri) => (
@@ -1232,26 +1610,29 @@ export default function PostScreen() {
               )}
             </View>
 
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLineDark} />
-              <Text style={styles.dividerTextDark}>OR</Text>
-              <View style={styles.dividerLineDark} />
-            </View>
+            {contentType !== 'story' && (
+              <>
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLineDark} />
+                  <Text style={styles.dividerTextDark}>OR</Text>
+                  <View style={styles.dividerLineDark} />
+                </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.labelDark}>Paste Media Link</Text>
-              <View style={styles.glassInputWrapperDark}>
-                <TextInput
-                  style={styles.inputDark}
-                  placeholder="https://..."
-                  placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                  value={mediaLink}
-                  onChangeText={handleMediaLinkChange}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-            </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.labelDark}>Paste Media Link</Text>
+                  <View style={styles.glassInputWrapperDark}>
+                    <TextInput
+                      style={styles.inputDark}
+                      placeholder="https://..."
+                      placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={false}
+                    />
+                  </View>
+                </View>
+              </>
+            )}
           </LinearGradient>
 
           <LinearGradient
@@ -1281,46 +1662,57 @@ export default function PostScreen() {
                     activeOpacity={0.7}
                     style={[styles.micButtonInside, isRecordingTitle && styles.micButtonActiveInside]}
                   >
-                    <Mic color={isRecordingTitle ? "#ffffff" : "#000000"} size={18} strokeWidth={2.5} />
+                    {isRecordingTitle ? (
+                      <AnimatedWave size={18} color="#ffffff" />
+                    ) : (
+                      <Mic color={isRecordingTitle ? "#ffffff" : "#000000"} size={18} strokeWidth={2.5} />
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
 
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Text style={styles.labelDark}>Caption</Text>
-              </View>
-              <View style={styles.glassInputWrapperDark}>
-                <View style={styles.inputWithMicInside}>
-                  <TextInput
-                    style={[styles.inputDarkWithMic, styles.textArea]}
-                    placeholder="Write your caption..."
-                    placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                    value={caption}
-                    onChangeText={setCaption}
-                    multiline
-                    numberOfLines={5}
-                    textAlignVertical="top"
-                  />
-                  <TouchableOpacity
-                    onPress={toggleCaptionRecording}
-                    activeOpacity={0.7}
-                    style={[styles.micButtonInside, isRecordingCaption && styles.micButtonActiveInside, styles.micButtonCaption]}
-                  >
-                    <Mic color={isRecordingCaption ? "#ffffff" : "#000000"} size={18} strokeWidth={2.5} />
-                  </TouchableOpacity>
+            {contentType !== 'story' && (
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.labelDark}>Caption</Text>
+                </View>
+                <View style={styles.glassInputWrapperDark}>
+                  <View style={styles.inputWithMicInside}>
+                    <TextInput
+                      style={[styles.inputDarkWithMic, styles.textArea]}
+                      placeholder="Write your caption..."
+                      placeholderTextColor="rgba(0, 0, 0, 0.4)"
+                      value={caption}
+                      onChangeText={setCaption}
+                      multiline
+                      numberOfLines={5}
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      onPress={toggleCaptionRecording}
+                      activeOpacity={0.7}
+                      style={[styles.micButtonInside, isRecordingCaption && styles.micButtonActiveInside, styles.micButtonCaption]}
+                    >
+                      {isRecordingCaption ? (
+                        <AnimatedWave size={18} color="#ffffff" />
+                      ) : (
+                        <Mic color={isRecordingCaption ? "#ffffff" : "#000000"} size={18} strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
           </LinearGradient>
 
-          <LinearGradient
-            colors={['#a3e635', '#84cc16']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.tagsCard}
-          >
+          {contentType !== 'story' && (
+            <LinearGradient
+              colors={['#a3e635', '#84cc16']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.tagsCard}
+            >
             <View style={styles.inputGroup}>
               <View style={styles.labelRow}>
                 <Text style={styles.labelDark}>UserTag</Text>
@@ -1372,6 +1764,7 @@ export default function PostScreen() {
               )}
             </View>
           </LinearGradient>
+          )}
 
           <LinearGradient
             colors={['#fb923c', '#f97316']}
@@ -1423,8 +1816,9 @@ export default function PostScreen() {
               </View>
               <View style={styles.platformsGrid}>
                 {SOCIAL_PLATFORMS.filter(platform => connectedPlatforms.includes(platform.id)).map((platform) => {
-                  const isCarousel = contentType === 'post' && (uploadedPhotos.length + uploadedVideos.length) > 1;
-                  const isDisabled = isCarousel && platform.id !== 'instagram';
+                  const isCarousel = contentType === 'post' && postType === 'carousel';
+                  const isStory = contentType === 'story';
+                  const isDisabled = (isCarousel && platform.id !== 'instagram') || (isStory && (platform.id === 'youtube' || platform.id === 'tiktok'));
                   
                   return (
                     <TouchableOpacity
@@ -1466,16 +1860,18 @@ export default function PostScreen() {
           <TouchableOpacity
             style={[
               styles.createButtonWrapper,
-              ((contentType === 'post' && !title) || isSubmitting) && styles.createButtonDisabled,
+              (((contentType === 'post' || contentType === 'story') && !title) || isSubmitting) && styles.createButtonDisabled,
             ]}
             onPress={handleCreate}
             activeOpacity={0.8}
-            disabled={isSubmitting || (contentType === 'post' && !title)}
+            disabled={isSubmitting || ((contentType === 'post' || contentType === 'story') && !title)}
           >
             <LinearGradient
               colors={contentType === 'post'
                 ? ['#60a5fa', '#3b82f6']
-                : ['#fbbf24', '#f59e0b']}
+                : contentType === 'reel'
+                ? ['#fbbf24', '#f59e0b']
+                : ['#ec4899', '#db2777']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.createButtonGradient}
@@ -1485,7 +1881,7 @@ export default function PostScreen() {
                   <ActivityIndicator color="#ffffff" size="small" style={styles.createButtonSpinner} />
                 )}
                 <Text style={styles.createButtonText}>
-                  {isSubmitting ? 'Submitting...' : contentType === 'post' ? 'Submit Post' : 'Submit Reel'}
+                  {isSubmitting ? 'Submitting...' : contentType === 'post' ? 'Submit Post' : contentType === 'reel' ? 'Submit Reel' : 'Submit Story'}
                 </Text>
               </View>
             </LinearGradient>
@@ -1645,6 +2041,35 @@ export default function PostScreen() {
         />
       )}
 
+      {/* Loading Overlay */}
+      {isSubmitting && (
+        <View style={styles.loadingOverlay}>
+          <LinearGradient
+            colors={['rgba(59, 130, 246, 0.1)', 'rgba(139, 92, 246, 0.1)', 'rgba(0, 0, 0, 0)']}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+          />
+          <View style={styles.loadingContent}>
+            <Animated.View
+              style={[
+                styles.loadingSpinner,
+                {
+                  transform: [{
+                    rotate: spinValue.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg'],
+                    }),
+                  }],
+                },
+              ]}
+            />
+            <Text style={styles.loadingTitle}>Hang tight!</Text>
+            <Text style={styles.loadingText}>{loadingText}</Text>
+          </View>
+        </View>
+      )}
+
     </View>
   );
 }
@@ -1714,7 +2139,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     bottom: 4,
-    width: '47.5%',
+    width: '31%',
     borderRadius: 20,
   },
   toggleSliderInner: {
@@ -1741,6 +2166,9 @@ const styles = StyleSheet.create({
   },
   toggleTextActiveReel: {
     color: '#60a5fa',
+  },
+  toggleTextActiveStory: {
+    color: '#3b82f6',
   },
   inputSection: {
     gap: 20,
@@ -1791,6 +2219,60 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 20,
     elevation: 10,
+  },
+  postTypeCard: {
+    borderRadius: 32,
+    padding: 24,
+    shadowColor: '#ec4899',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
+    marginBottom: 20,
+  },
+  postTypeOptionsContainer: {
+    gap: 12,
+  },
+  postTypeOption: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  postTypeOptionSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+  },
+  radioButton: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioButtonInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ec4899',
+  },
+  postTypeLabel: {
+    flex: 1,
+    color: 'rgba(0, 0, 0, 0.7)',
+    fontSize: 16,
+    fontFamily: 'Archivo-Bold',
+    letterSpacing: -0.3,
+  },
+  postTypeLabelSelected: {
+    color: '#000000',
   },
   platformsGrid: {
     gap: 12,
@@ -1942,6 +2424,46 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Archivo-Bold',
     letterSpacing: -0.3,
+  },
+  storyStyleSection: {
+    marginTop: 20,
+  },
+  storyStyleHeading: {
+    color: '#000000',
+    fontSize: 15,
+    fontFamily: 'Archivo-Bold',
+    letterSpacing: -0.3,
+    marginBottom: 12,
+  },
+  bannerPillsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  bannerPill: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+  },
+  bannerPillSelected: {
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.7)',
+  },
+  bannerPillText: {
+    color: 'rgba(0, 0, 0, 0.6)',
+    fontSize: 14,
+    fontFamily: 'Archivo-Bold',
+    letterSpacing: -0.2,
+  },
+  bannerPillTextSelected: {
+    color: '#000000',
   },
   labelDark: {
     color: '#000000',
@@ -2769,6 +3291,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Archivo-Bold',
     color: '#ffffff',
+    letterSpacing: -0.3,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 9999,
+  },
+  loadingContent: {
+    alignItems: 'center',
+    gap: 24,
+  },
+  loadingSpinner: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: '#3b82f6',
+  },
+  loadingTitle: {
+    fontSize: 28,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+    marginTop: 8,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: 'Archivo-Medium',
+    color: 'rgba(255, 255, 255, 0.7)',
     letterSpacing: -0.3,
   },
 });

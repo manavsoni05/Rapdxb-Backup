@@ -161,7 +161,12 @@ export default function SettingsScreen() {
         
         // Open the auth URL
         if (Platform.OS === 'web') {
-          const authWindow = window.open(authData.authUrl, '_blank');
+          let url = authData.authUrl;
+          if(platformId === 'tiktok') {
+            const separator = url.includes('?') ? '&' : '?';
+            url += `${separator}disable_auto_auth=1&set_force_login=true`;
+          }
+          const authWindow = window.open(url, '_blank');
           if (!authWindow) {
             setLoadingPlatform(null);
             alert('Please allow pop-ups for this site to connect your account.');
@@ -185,7 +190,12 @@ export default function SettingsScreen() {
         } else {
           // For mobile, use WebBrowser from expo-web-browser
           try {
-            const result = await WebBrowser.openBrowserAsync(authData.authUrl, {
+             let url = authData.authUrl;
+          if(platformId === 'tiktok') {
+            const separator = url.includes('?') ? '&' : '?';
+            url += `${separator}disable_auto_auth=1&set_force_login=true`;
+          }
+            const result = await WebBrowser.openBrowserAsync(url, {
               dismissButtonStyle: 'close',
               presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
               controlsColor: '#3b82f6',
