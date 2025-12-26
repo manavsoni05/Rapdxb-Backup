@@ -46,6 +46,22 @@ export default function HomeScreen() {
     { id: 2, text: 'You Just Hit 10k Likes', read: false, icon: 'heart', time: '1h ago', color: '#fbbf24' },
     { id: 3, text: 'Just Posted To Website', read: false, icon: 'website', time: '3h ago', color: '#10b981' },
   ]);
+  const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+
+  // Fetch fullName from AsyncStorage on component mount
+  useEffect(() => {
+    const loadUserName = async () => {
+      try {
+        const storedFullName = await AsyncStorage.getItem('fullName');
+        if (storedFullName) {
+          setFullName(storedFullName);
+        }
+      } catch (error) {
+        console.error('Failed to load fullName:', error);
+      }
+    };
+    loadUserName();
+  }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -278,7 +294,7 @@ export default function HomeScreen() {
 
       <View style={styles.greetingContainer}>
         <Text style={styles.greetingHello}>Hello, </Text>
-        <Text style={styles.greetingName}>RAPDXB</Text>
+        <Text style={styles.greetingName}>{fullName}</Text>
         <Image
           source={{ uri: 'https://i.imgur.com/5rF4a1S.png' }}
           style={styles.verifiedBadge}

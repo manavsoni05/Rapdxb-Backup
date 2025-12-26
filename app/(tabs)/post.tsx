@@ -210,7 +210,8 @@ export default function PostScreen() {
   const insets = useSafeAreaInsets();
   const [contentType, setContentType] = useState<'post' | 'reel' | 'story'>('post');
   const [postType, setPostType] = useState<'single' | 'carousel'>('single');
-  const [title, setTitle] = useState('');
+  // Commented out for future use - Title field related state
+  // const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -222,13 +223,15 @@ export default function PostScreen() {
   const [uploadedVideos, setUploadedVideos] = useState<string[]>([]);
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [mediaOrder, setMediaOrder] = useState<string[]>([]);
-  const [isRecordingTitle, setIsRecordingTitle] = useState(false);
+  // Commented out for future use - Title recording related states
+  // const [isRecordingTitle, setIsRecordingTitle] = useState(false);
   const [isRecordingCaption, setIsRecordingCaption] = useState(false);
-  const recognitionTitle = useRef<any>(null);
+  // const recognitionTitle = useRef<any>(null);
   const recognitionCaption = useRef<any>(null);
-  const lastResultIndexTitle = useRef<number>(0);
+  // const lastResultIndexTitle = useRef<number>(0);
   const lastResultIndexCaption = useRef<number>(0);
-  const [selectedBannerId, setSelectedBannerId] = useState('agXkA3Dw0zNEbW2VBY'); // Default
+  // Commented out for future use - Story Style related state
+  // const [selectedBannerId, setSelectedBannerId] = useState('agXkA3Dw0zNEbW2VBY'); // Default
 
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -358,13 +361,15 @@ export default function PostScreen() {
 
   // Speech recognition event listeners for mobile
   useSpeechRecognitionEvent('result', (event) => {
-    if (isRecordingTitle) {
-      const transcript = event.results[0]?.transcript || '';
-      // Since interimResults is false, we only get final results
-      if (transcript) {
-        setTitle(prev => prev + transcript + ' ');
-      }
-    } else if (isRecordingCaption) {
+    // Commented out for future use - Title recording event handling
+    // if (isRecordingTitle) {
+    //   const transcript = event.results[0]?.transcript || '';
+    //   // Since interimResults is false, we only get final results
+    //   if (transcript) {
+    //     setTitle(prev => prev + transcript + ' ');
+    //   }
+    // } else 
+    if (isRecordingCaption) {
       const transcript = event.results[0]?.transcript || '';
       // Since interimResults is false, we only get final results
       if (transcript) {
@@ -375,10 +380,11 @@ export default function PostScreen() {
 
   useSpeechRecognitionEvent('end', () => {
     // Auto-stop when recognition ends
-    if (isRecordingTitle) {
-      setIsRecordingTitle(false);
-      lastResultIndexTitle.current = 0;
-    }
+    // Commented out for future use - Title recording end handling
+    // if (isRecordingTitle) {
+    //   setIsRecordingTitle(false);
+    //   lastResultIndexTitle.current = 0;
+    // }
     if (isRecordingCaption) {
       setIsRecordingCaption(false);
       lastResultIndexCaption.current = 0;
@@ -397,9 +403,10 @@ export default function PostScreen() {
       showNotification('error', 'Speech recognition failed. Please try again.');
     }
     
-    setIsRecordingTitle(false);
+    // Commented out for future use - Title recording error handling
+    // setIsRecordingTitle(false);
     setIsRecordingCaption(false);
-    lastResultIndexTitle.current = 0;
+    // lastResultIndexTitle.current = 0;
     lastResultIndexCaption.current = 0;
   });
 
@@ -407,30 +414,31 @@ export default function PostScreen() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
-        recognitionTitle.current = new SpeechRecognition();
-        recognitionTitle.current.continuous = true;
-        recognitionTitle.current.interimResults = true;
-        recognitionTitle.current.lang = 'en';
+        // Commented out for future use - Title recognition setup
+        // recognitionTitle.current = new SpeechRecognition();
+        // recognitionTitle.current.continuous = true;
+        // recognitionTitle.current.interimResults = true;
+        // recognitionTitle.current.lang = 'en';
 
-        recognitionTitle.current.onresult = (event: any) => {
-          let finalTranscript = '';
+        // recognitionTitle.current.onresult = (event: any) => {
+        //   let finalTranscript = '';
 
-          // Only process new results since last index
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript + ' ';
-            }
-          }
+        //   // Only process new results since last index
+        //   for (let i = event.resultIndex; i < event.results.length; i++) {
+        //     const transcript = event.results[i][0].transcript;
+        //     if (event.results[i].isFinal) {
+        //       finalTranscript += transcript + ' ';
+        //     }
+        //   }
 
-          if (finalTranscript) {
-            setTitle(prev => prev + finalTranscript);
-          }
-        };
+        //   if (finalTranscript) {
+        //     setTitle(prev => prev + finalTranscript);
+        //   }
+        // };
         
-        recognitionTitle.current.onstart = () => {
-          lastResultIndexTitle.current = 0;
-        };
+        // recognitionTitle.current.onstart = () => {
+        //   lastResultIndexTitle.current = 0;
+        // };
 
         recognitionCaption.current = new SpeechRecognition();
         recognitionCaption.current.continuous = true;
@@ -460,15 +468,18 @@ export default function PostScreen() {
     }
 
     return () => {
-      if (recognitionTitle.current) {
-        recognitionTitle.current.stop();
-      }
+      // Commented out for future use - Title recognition cleanup
+      // if (recognitionTitle.current) {
+      //   recognitionTitle.current.stop();
+      // }
       if (recognitionCaption.current) {
         recognitionCaption.current.stop();
       }
     };
   }, []);
 
+  // Commented out for future use - toggleTitleRecording function
+  /*
   const toggleTitleRecording = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -544,6 +555,7 @@ export default function PostScreen() {
       lastResultIndexTitle.current = 0;
     }
   };
+  */
 
   const toggleCaptionRecording = async () => {
     if (Platform.OS !== 'web') {
@@ -551,15 +563,15 @@ export default function PostScreen() {
     }
 
     if (!isRecordingCaption) {
-      // Stop title recording if it's active
-      if (isRecordingTitle) {
-        if (Platform.OS === 'web' && recognitionTitle.current) {
-          recognitionTitle.current.stop();
-        } else if (Platform.OS !== 'web') {
-          await ExpoSpeechRecognitionModule.stop();
-        }
-        setIsRecordingTitle(false);
-      }
+      // Commented out for future use - Stop title recording if it's active
+      // if (isRecordingTitle) {
+      //   if (Platform.OS === 'web' && recognitionTitle.current) {
+      //     recognitionTitle.current.stop();
+      //   } else if (Platform.OS !== 'web') {
+      //     await ExpoSpeechRecognitionModule.stop();
+      //   }
+      //   setIsRecordingTitle(false);
+      // }
 
       // For mobile platforms, request permission first
       if (Platform.OS !== 'web') {
@@ -674,7 +686,8 @@ export default function PostScreen() {
     }).start();
 
     setContentType(type);
-    setTitle('');
+    // Commented out for future use - Reset title on content type change
+    // setTitle('');
     setCaption('');
     setTags([]);
     setTagInput('');
@@ -682,7 +695,8 @@ export default function PostScreen() {
     setUploadedPhotos([]);
     setScheduleDate(null);
     setMediaOrder([]);
-    setSelectedBannerId('agXkA3Dw0zNEbW2VBY'); // Reset to default
+    // Commented out for future use - Reset selectedBannerId on content type change
+    // setSelectedBannerId('agXkA3Dw0zNEbW2VBY'); // Reset to default
   };
 
   const handleAddTag = () => {
@@ -955,10 +969,11 @@ export default function PostScreen() {
       return;
     }
 
-    if ((contentType === 'post' || contentType === 'story') && !title.trim()) {
-      showNotification('error', 'Title Required: Please enter a title for your post.');
-      return;
-    }
+    // Commented out for future use - Title validation
+    // if ((contentType === 'post' || contentType === 'story') && !title.trim()) {
+    //   showNotification('error', 'Title Required: Please enter a title for your post.');
+    //   return;
+    // }
 
     const pendingCleanups: string[] = [];
     let resolvedMimeType: string | null = null;
@@ -1037,6 +1052,9 @@ export default function PostScreen() {
       );
 
       let titlePromptPayload, captionPromptPayload;
+
+      // Commented out for future use - Set default empty title for prompts
+      const title = '';
 
       if (contentType === 'story') {
         // Story-specific prompts (title only, no caption)
@@ -1123,7 +1141,9 @@ export default function PostScreen() {
       
       // Add bannerId for story
       if (contentType === 'story') {
-        formData.append('bannerId', selectedBannerId);
+        // Commented out for future use - Add selectedBannerId for story
+        // formData.append('bannerId', selectedBannerId);
+        formData.append('bannerId', 'agXkA3Dw0zNEbW2VBY'); // Use default banner
       }
 
       const targetEndpoint = contentType === 'story'
@@ -1190,7 +1210,8 @@ export default function PostScreen() {
       
       showNotification('success', notificationMessage);
 
-      setTitle('');
+      // Commented out for future use - Reset title after successful submission
+      // setTitle('');
       setCaption('');
       setTags([]);
       setTagInput('');
@@ -1505,7 +1526,8 @@ export default function PostScreen() {
                     <Text style={styles.uploadButtonText}>Upload Video</Text>
                   </TouchableOpacity>
                   
-                  <View style={styles.storyStyleSection}>
+                  {/* Commented out for future use - Story Style section */}
+                  {/* <View style={styles.storyStyleSection}>
                     <Text style={styles.storyStyleHeading}>Story Style</Text>
                     <View style={styles.bannerPillsContainer}>
                       <TouchableOpacity 
@@ -1550,7 +1572,7 @@ export default function PostScreen() {
                         <Text style={[styles.bannerPillText, selectedBannerId === 'agXkA3Dw0zNEbW2VBY' && styles.bannerPillTextSelected]}>Default</Text>
                       </TouchableOpacity>
                     </View>
-                  </View>
+                  </View> */}
                 </>
               ) : (
                 <View style={styles.uploadButtonsContainer}>
@@ -1610,7 +1632,8 @@ export default function PostScreen() {
               )}
             </View>
 
-            {contentType !== 'story' && (
+            {/* Commented out for future use - Media Link section */}
+            {/* {contentType !== 'story' && (
               <>
                 <View style={styles.dividerContainer}>
                   <View style={styles.dividerLineDark} />
@@ -1632,10 +1655,11 @@ export default function PostScreen() {
                   </View>
                 </View>
               </>
-            )}
+            )} */}
           </LinearGradient>
 
-          <LinearGradient
+          {/* Commented out for future use - Title field */}
+          {/* <LinearGradient
             colors={['#fbbf24', '#f59e0b']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -1671,8 +1695,15 @@ export default function PostScreen() {
                 </View>
               </View>
             </View>
+          </LinearGradient> */}
 
-            {contentType !== 'story' && (
+          {contentType !== 'story' && (
+            <LinearGradient
+              colors={['#fbbf24', '#f59e0b']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.inputCard}
+            >
               <View style={styles.inputGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.labelDark}>Caption</Text>
@@ -1703,8 +1734,8 @@ export default function PostScreen() {
                   </View>
                 </View>
               </View>
-            )}
-          </LinearGradient>
+            </LinearGradient>
+          )}
 
           {contentType !== 'story' && (
             <LinearGradient
@@ -1818,7 +1849,8 @@ export default function PostScreen() {
                 {SOCIAL_PLATFORMS.filter(platform => connectedPlatforms.includes(platform.id)).map((platform) => {
                   const isCarousel = contentType === 'post' && postType === 'carousel';
                   const isStory = contentType === 'story';
-                  const isDisabled = (isCarousel && platform.id !== 'instagram') || (isStory && (platform.id === 'youtube' || platform.id === 'tiktok'));
+                  const isPost = contentType === 'post';
+                  const isDisabled = (isCarousel && platform.id !== 'instagram') || (isStory && (platform.id === 'youtube' || platform.id === 'tiktok')) || (isPost && platform.id === 'youtube');
                   
                   return (
                     <TouchableOpacity
@@ -1860,11 +1892,15 @@ export default function PostScreen() {
           <TouchableOpacity
             style={[
               styles.createButtonWrapper,
-              (((contentType === 'post' || contentType === 'story') && !title) || isSubmitting) && styles.createButtonDisabled,
+              // Commented out for future use - Title validation in button disabled condition
+              // (((contentType === 'post' || contentType === 'story') && !title) || isSubmitting) && styles.createButtonDisabled,
+              isSubmitting && styles.createButtonDisabled,
             ]}
             onPress={handleCreate}
             activeOpacity={0.8}
-            disabled={isSubmitting || ((contentType === 'post' || contentType === 'story') && !title)}
+            // Commented out for future use - Title validation in button disabled prop
+            // disabled={isSubmitting || ((contentType === 'post' || contentType === 'story') && !title)}
+            disabled={isSubmitting}
           >
             <LinearGradient
               colors={contentType === 'post'

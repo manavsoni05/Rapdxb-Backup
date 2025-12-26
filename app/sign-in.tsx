@@ -50,13 +50,16 @@ export default function SignInScreen() {
       
       // Check success status from backend
       if (data.success === true && data.user && data.user._id) {
-        console.log('Login successful, storing email...');
+        console.log('Login successful, storing user data...');
         
-        // Store only email in AsyncStorage
+        // Store email and fullName in AsyncStorage
         const userEmail = data.user._id; // Backend returns email in _id field
-        await AsyncStorage.setItem('email', userEmail);
+        const fullName = data.user.fullName || 'RAPDXB'; // Get fullName from API response
         
-        console.log('Email stored successfully:', userEmail);
+        await AsyncStorage.setItem('email', userEmail);
+        await AsyncStorage.setItem('fullName', fullName);
+        
+        console.log('Email and fullName stored successfully:', userEmail, fullName);
         console.log('Redirecting to home...');
         
         // Redirect to home

@@ -30,6 +30,8 @@ export default function SettingsScreen() {
   const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png');
   const [editName, setEditName] = useState(profileName);
   const [editImage, setEditImage] = useState(profileImage);
+  const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+  const [platformCount, setPlatformCount] = useState(0); // Platform count from API
   const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({
     instagram: false,
@@ -66,7 +68,12 @@ export default function SettingsScreen() {
           instagram: data.isInstagramConnect ,
           youtube: data.isYoutubeConnect ,
           tiktok: data.isTiktokConnect ,
-        }); 
+        });
+        
+        // Extract platformCount from API response
+        if (data.platformCount !== undefined) {
+          setPlatformCount(data.platformCount);
+        }
       }
     } catch (error) {
       console.error('Failed to check connection status', error);
@@ -76,6 +83,21 @@ export default function SettingsScreen() {
   useEffect(() => {
     checkConnectionStatus();
   }, [checkConnectionStatus]);
+
+  // Fetch fullName from AsyncStorage on component mount
+  useEffect(() => {
+    const loadUserName = async () => {
+      try {
+        const storedFullName = await AsyncStorage.getItem('fullName');
+        if (storedFullName) {
+          setFullName(storedFullName);
+        }
+      } catch (error) {
+        console.error('Failed to load fullName:', error);
+      }
+    };
+    loadUserName();
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -486,7 +508,7 @@ export default function SettingsScreen() {
               style={styles.profileImage}
             />
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{profileName}</Text>
+              <Text style={styles.profileName}>{fullName}</Text>
               <Image
                 source={{ uri: 'https://i.imgur.com/5rF4a1S.png' }}
                 style={styles.verifiedBadge}
@@ -506,7 +528,7 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>6</Text>
+              <Text style={styles.statValue}>{platformCount}</Text>
               <Text style={styles.statLabel}>Platforms</Text>
             </View>
           </View>
