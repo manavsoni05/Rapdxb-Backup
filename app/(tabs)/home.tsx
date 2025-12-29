@@ -1,11 +1,11 @@
 import { View, Text, StyleSheet, Image, Animated, ScrollView, RefreshControl, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bell, MapPin, Moon, Flame, ChartBar as BarChart, X, LogOut } from 'lucide-react-native';
 import Svg, { Path, Circle, Defs, Pattern, Rect, G, Line, ClipPath, LinearGradient as SvgLinearGradient, Stop, RadialGradient } from 'react-native-svg';
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -47,21 +47,62 @@ export default function HomeScreen() {
     { id: 3, text: 'Just Posted To Website', read: false, icon: 'website', time: '3h ago', color: '#10b981' },
   ]);
   const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+  const [platformAnalytics, setPlatformAnalytics] = useState<any>({});
+  const [totalFollowers, setTotalFollowers] = useState(0);
+  const [totalLikes, setTotalLikes] = useState(0);
+
+  // Load user name and analytics data function
+  const loadUserName = useCallback(async () => {
+    try {
+      const storedFullName = await AsyncStorage.getItem('fullName');
+      if (storedFullName) {
+        setFullName(storedFullName);
+      }
+
+      // Load total followers from AsyncStorage
+      const storedFollowers = await AsyncStorage.getItem('totalFollowers');
+      if (storedFollowers) {
+        setTotalFollowers(parseInt(storedFollowers, 10));
+      }
+
+      // Load platform analytics and calculate total likes
+      const storedAnalytics = await AsyncStorage.getItem('platformAnalyticsTotals');
+      if (storedAnalytics) {
+        const analytics = JSON.parse(storedAnalytics);
+        setPlatformAnalytics(analytics);
+
+        // Calculate total likes from all platforms
+        let totalLikesCount = 0;
+        Object.keys(analytics).forEach((platform) => {
+          if (analytics[platform] && analytics[platform].likes) {
+            totalLikesCount += analytics[platform].likes;
+          }
+        });
+        setTotalLikes(totalLikesCount);
+      }
+    } catch (error) {
+      console.error('Failed to load user data:', error);
+    }
+  }, []);
 
   // Fetch fullName from AsyncStorage on component mount
   useEffect(() => {
-    const loadUserName = async () => {
-      try {
-        const storedFullName = await AsyncStorage.getItem('fullName');
-        if (storedFullName) {
-          setFullName(storedFullName);
-        }
-      } catch (error) {
-        console.error('Failed to load fullName:', error);
-      }
-    };
     loadUserName();
-  }, []);
+  }, [loadUserName]);
+
+  // Refresh fullName when screen comes into focus (e.g., when returning from settings)
+  useFocusEffect(
+    useCallback(() => {
+      loadUserName();
+    }, [loadUserName])
+  );
+
+  // Format number with K/M suffix
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num.toString();
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -315,7 +356,7 @@ export default function HomeScreen() {
               resizeMode="cover"
             />
             <View style={styles.cardBottom}>
-              <Text style={styles.cardValue}>56.1k</Text>
+              <Text style={styles.cardValue}>{formatNumber(totalFollowers)}</Text>
               <Text style={styles.cardLabel}>Followers</Text>
             </View>
           </LinearGradient>
@@ -342,7 +383,7 @@ export default function HomeScreen() {
             />
             <View style={styles.cardYellowContent}>
               <View style={styles.cardBottom}>
-                <Text style={styles.cardValueDark}>903K</Text>
+                <Text style={styles.cardValueDark}>{formatNumber(totalLikes)}</Text>
                 <Text style={styles.cardLabelDark}>Likes</Text>
               </View>
             </View>

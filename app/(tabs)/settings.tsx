@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, Edit2, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
+import * as ImagePicker from 'expo-image-picker';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -22,6 +23,7 @@ const INSTAGRAM_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhoo
 const YOUTUBE_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/youtube';
 const TIKTOK_CONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/tiktok';
 const DISCONNECT_URL = 'https://n8n-production-0558.up.railway.app/webhook/disconnect';
+const UPDATE_USER_DETAIL_URL = 'https://n8n-production-0558.up.railway.app/webhook/updateUserDetail';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
@@ -32,6 +34,9 @@ export default function SettingsScreen() {
   const [editImage, setEditImage] = useState(profileImage);
   const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
   const [platformCount, setPlatformCount] = useState(0); // Platform count from API
+  const [totalFollowers, setTotalFollowers] = useState(0); // Total followers from API
+  const [totalLikes, setTotalLikes] = useState(0); // Total likes from all platforms
+  const [connectedUsernames, setConnectedUsernames] = useState<{instagram?: string; tiktok?: string; youtube?: string}>({}); // Connected usernames
   const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({
     instagram: false,
@@ -41,6 +46,7 @@ export default function SettingsScreen() {
   const [loadingPlatform, setLoadingPlatform] = useState<string | null>(null);
   const [notification, setNotification] = useState<{type: 'success' | 'error'; message: string} | null>(null);
   const notificationOpacity = useRef(new Animated.Value(0)).current;
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const checkConnectionStatus = useCallback(async () => {
     try {
@@ -84,19 +90,47 @@ export default function SettingsScreen() {
     checkConnectionStatus();
   }, [checkConnectionStatus]);
 
-  // Fetch fullName from AsyncStorage on component mount
+  // Fetch fullName, totalFollowers, and connectedUsernames from AsyncStorage on component mount
   useEffect(() => {
-    const loadUserName = async () => {
+    const loadUserData = async () => {
       try {
         const storedFullName = await AsyncStorage.getItem('fullName');
         if (storedFullName) {
           setFullName(storedFullName);
         }
+        
+        const storedFollowers = await AsyncStorage.getItem('totalFollowers');
+        if (storedFollowers) {
+          setTotalFollowers(parseInt(storedFollowers, 10));
+        }
+        
+        const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
+        if (storedUsernames) {
+          setConnectedUsernames(JSON.parse(storedUsernames));
+        }
+
+        const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+        if (storedProfileUrl) {
+          setProfileImage(storedProfileUrl);
+        }
+
+        // Calculate total likes from all platforms
+        const storedAnalytics = await AsyncStorage.getItem('platformAnalyticsTotals');
+        if (storedAnalytics) {
+          const analytics = JSON.parse(storedAnalytics);
+          let totalLikesCount = 0;
+          Object.keys(analytics).forEach((platform) => {
+            if (analytics[platform]?.likes) {
+              totalLikesCount += analytics[platform].likes;
+            }
+          });
+          setTotalLikes(totalLikesCount);
+        }
       } catch (error) {
-        console.error('Failed to load fullName:', error);
+        console.error('Failed to load user data:', error);
       }
     };
-    loadUserName();
+    loadUserData();
   }, []);
 
   useFocusEffect(
@@ -403,27 +437,99 @@ export default function SettingsScreen() {
     setShowEditModal(false);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     }
-    setProfileName(editName);
-    setProfileImage(editImage);
-    setShowEditModal(false);
+
+    // Validate name is not empty
+    if (!editName.trim()) {
+      showNotification('error', 'Name cannot be empty');
+      return;
+    }
+
+    setIsSavingProfile(true);
+
+    try {
+      const email = await AsyncStorage.getItem('email');
+      if (!email) {
+        showNotification('error', 'No email found. Please sign in again.');
+        setIsSavingProfile(false);
+        return;
+      }
+
+      const response = await fetch(UPDATE_USER_DETAIL_URL, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: editName.trim(),
+          email: email,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to update profile');
+      }
+
+      const data = await response.json();
+      console.log('Profile updated successfully:', data);
+
+      // Update local state
+      setProfileName(editName.trim());
+      setFullName(editName.trim());
+      
+      // Update AsyncStorage
+      await AsyncStorage.setItem('fullName', editName.trim());
+
+      // TODO: Implement profile image update in future
+      // For now, just update the local state
+      setProfileImage(editImage);
+
+      setShowEditModal(false);
+      showNotification('success', 'Profile updated successfully!');
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update profile. Please try again.';
+      showNotification('error', errorMessage);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-  const handleChangeImage = () => {
+  const handleChangeImage = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    const sampleImages = [
-      'https://i.imgur.com/vhILBC1.png',
-      'https://i.imgur.com/9BvTmzs.png',
-      'https://i.imgur.com/K2vZ9xL.png',
-    ];
-    const currentIndex = sampleImages.indexOf(editImage);
-    const nextIndex = (currentIndex + 1) % sampleImages.length;
-    setEditImage(sampleImages[nextIndex]);
+
+    // Request permission to access media library
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (permissionResult.granted === false) {
+      showNotification('error', 'Permission to access gallery is required');
+      return;
+    }
+
+    // Launch image picker
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1], // Square aspect ratio for profile image
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const selectedImageUri = result.assets[0].uri;
+      setEditImage(selectedImageUri);
+
+      // TODO: When implementing backend profile image upload:
+      // 1. Convert image to base64 or use FormData
+      // 2. Include profileImage field in the API call to UPDATE_USER_DETAIL_URL
+      // 3. Update the API endpoint to accept multipart/form-data if using FormData
+      // 4. Save the returned image URL to AsyncStorage and state
+    }
   };
 
   return (
@@ -518,12 +624,12 @@ export default function SettingsScreen() {
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>56.1K</Text>
+              <Text style={styles.statValue}>{totalFollowers}</Text>
               <Text style={styles.statLabel}>Followers</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>903K</Text>
+              <Text style={styles.statValue}>{totalLikes}</Text>
               <Text style={styles.statLabel}>Likes</Text>
             </View>
             <View style={styles.statDivider} />
@@ -542,6 +648,7 @@ export default function SettingsScreen() {
               const canConnect = platform.id === 'instagram' || platform.id === 'youtube' || platform.id === 'tiktok';
               const isLoading = loadingPlatform === platform.id;
               const platformStatus = isLoading ? 'Loading...' : isConnected ? 'Connected' : (canConnect ? 'Connect' : 'Not connected');
+              const username = isConnected ? connectedUsernames[platform.id as keyof typeof connectedUsernames] : null;
 
               return (
               <View
@@ -580,9 +687,16 @@ export default function SettingsScreen() {
                     {isConnected ? (
                       <View style={styles.connectedIndicator}>
                         <View style={styles.greenDot} />
-                        <Text style={styles.connectedTextActive}>
-                          {platformStatus}
-                        </Text>
+                        <View style={styles.connectedTextContainer}>
+                          <Text style={styles.connectedTextActive}>
+                            {platformStatus}
+                          </Text>
+                          {username && (
+                            <Text style={styles.usernameText}>
+                              @{username}
+                            </Text>
+                          )}
+                        </View>
                       </View>
                     ) : (
                       <Text style={[
@@ -665,6 +779,7 @@ export default function SettingsScreen() {
                     onChangeText={setEditName}
                     placeholder="Enter your name..."
                     placeholderTextColor="rgba(255, 255, 255, 0.5)"
+                    editable={!isSavingProfile}
                   />
                 </View>
               </View>
@@ -672,9 +787,12 @@ export default function SettingsScreen() {
               <TouchableOpacity
                 activeOpacity={0.7}
                 onPress={handleSaveEdit}
-                style={styles.saveButton}
+                style={[styles.saveButton, isSavingProfile && styles.saveButtonDisabled]}
+                disabled={isSavingProfile}
               >
-                <Text style={styles.saveButtonText}>Save Changes</Text>
+                <Text style={styles.saveButtonText}>
+                  {isSavingProfile ? 'Saving...' : 'Save Changes'}
+                </Text>
               </TouchableOpacity>
             </LinearGradient>
           </View>
@@ -918,6 +1036,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  connectedTextContainer: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  usernameText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 11,
+    fontFamily: 'Archivo-Regular',
+    marginTop: 2,
+    letterSpacing: -0.2,
+  },
   greenDot: {
     width: 8,
     height: 8,
@@ -1026,6 +1155,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
   saveButtonText: {
     fontSize: 18,

@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInp
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout } from 'lucide-react-native';
+import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout, Sparkles } from 'lucide-react-native';
 import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -25,6 +25,7 @@ const CREATE_REEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook
 const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-carousel';
 const CREATE_STORY_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-story';
 const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
+const CAPTION_RECREATE_URL = 'https://n8n-production-0558.up.railway.app/webhook/captionRecreate';
 
 const PLATFORMS_POST = ['Instagram', 'Facebook', 'Twitter', 'Snapchat', 'All'];
 const PLATFORMS_REEL = ['Instagram Reels', 'YouTube Shorts', 'TikTok', 'Facebook Reels', 'Snapchat', 'All'];
@@ -226,6 +227,7 @@ export default function PostScreen() {
   // Commented out for future use - Title recording related states
   // const [isRecordingTitle, setIsRecordingTitle] = useState(false);
   const [isRecordingCaption, setIsRecordingCaption] = useState(false);
+  const [isRegeneratingCaption, setIsRegeneratingCaption] = useState(false);
   // const recognitionTitle = useRef<any>(null);
   const recognitionCaption = useRef<any>(null);
   // const lastResultIndexTitle = useRef<number>(0);
@@ -630,6 +632,54 @@ export default function PostScreen() {
       }
       setIsRecordingCaption(false);
       lastResultIndexCaption.current = 0;
+    }
+  };
+
+  const handleRegenerateCaption = async () => {
+    if (!caption.trim()) {
+      showNotification('error', 'Please enter a caption first');
+      return;
+    }
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    setIsRegeneratingCaption(true);
+
+    try {
+      // Determine isReel based on contentType and postType
+      const isReel = contentType === 'reel' || (contentType === 'post' && postType === 'carousel');
+
+      const response = await fetch(CAPTION_RECREATE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          captionpromt: caption.trim(),
+          isReel: isReel,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Regenerated caption response:', data);
+        // Response is an array, get first item, then content[0].text
+        if (data && Array.isArray(data) && data[0]?.content?.[0]?.text) {
+          setCaption(data[0].content[0].text);
+          showNotification('success', 'Caption regenerated successfully!');
+        } else {
+          showNotification('error', 'Failed to regenerate caption');
+        }
+      } else {
+        showNotification('error', 'Failed to regenerate caption');
+      }
+    } catch (error) {
+      console.error('Error regenerating caption:', error);
+      showNotification('error', 'An error occurred while regenerating caption');
+    } finally {
+      setIsRegeneratingCaption(false);
     }
   };
 
@@ -1100,7 +1150,7 @@ export default function PostScreen() {
 
       formData.append('titlePromt', JSON.stringify(titlePromptPayload));
       if (captionPromptPayload) {
-        formData.append('captionPromt', JSON.stringify(captionPromptPayload));
+        formData.append('captionPromt', caption.trim());
       }
       formData.append('max_tokens', '1024');
       formData.append('email', storedUserId);
@@ -1711,7 +1761,7 @@ export default function PostScreen() {
                 <View style={styles.glassInputWrapperDark}>
                   <View style={styles.inputWithMicInside}>
                     <TextInput
-                      style={[styles.inputDarkWithMic, styles.textArea]}
+                      style={[styles.inputDarkWithMic, styles.textArea, styles.inputWithAIButton]}
                       placeholder="Write your caption..."
                       placeholderTextColor="rgba(0, 0, 0, 0.4)"
                       value={caption}
@@ -1720,6 +1770,18 @@ export default function PostScreen() {
                       numberOfLines={5}
                       textAlignVertical="top"
                     />
+                    <TouchableOpacity
+                      onPress={handleRegenerateCaption}
+                      activeOpacity={0.7}
+                      disabled={isRegeneratingCaption}
+                      style={[styles.aiButtonInside, styles.aiButtonCaption]}
+                    >
+                      {isRegeneratingCaption ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <Sparkles color="#ffffff" size={18} strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={toggleCaptionRecording}
                       activeOpacity={0.7}
@@ -2567,6 +2629,28 @@ const styles = StyleSheet.create({
   },
   micButtonCaption: {
     top: 12,
+  },
+  aiButtonInside: {
+    position: 'absolute',
+    right: 56,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#8b5cf6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  aiButtonCaption: {
+    top: 12,
+  },
+  aiButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
+    fontFamily: 'Inter-Bold',
+  },
+  inputWithAIButton: {
+    paddingRight: 100,
   },
   inputDark: {
     paddingHorizontal: 20,

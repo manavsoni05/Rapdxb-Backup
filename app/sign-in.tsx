@@ -55,11 +55,21 @@ export default function SignInScreen() {
         // Store email and fullName in AsyncStorage
         const userEmail = data.user._id; // Backend returns email in _id field
         const fullName = data.user.fullName || 'RAPDXB'; // Get fullName from API response
+        const totalFollowers = data.user.totalFollowers || 0; // Get totalFollowers from API response
+        const connectedUsernames = data.user.connectedUsernames || {}; // Get connectedUsernames from API response
+        const instagramProfileUrl = data.user.instagramProfileUrl || 'https://i.imgur.com/vhILBC1.png'; // Get profile image URL
+        const platformAnalyticsTotals = data.platformAnalyticsTotals || {}; // Get platform analytics data
+        const platformFollowers = data.platformFollowers || []; // Get platform followers data
         
         await AsyncStorage.setItem('email', userEmail);
         await AsyncStorage.setItem('fullName', fullName);
+        await AsyncStorage.setItem('totalFollowers', String(totalFollowers));
+        await AsyncStorage.setItem('connectedUsernames', JSON.stringify(connectedUsernames));
+        await AsyncStorage.setItem('instagramProfileUrl', instagramProfileUrl);
+        await AsyncStorage.setItem('platformAnalyticsTotals', JSON.stringify(platformAnalyticsTotals));
+        await AsyncStorage.setItem('platformFollowers', JSON.stringify(platformFollowers));
         
-        console.log('Email and fullName stored successfully:', userEmail, fullName);
+        console.log('Email, fullName, totalFollowers, connectedUsernames, instagramProfileUrl, and platformAnalyticsTotals stored successfully:', userEmail, fullName, totalFollowers, connectedUsernames, instagramProfileUrl, platformAnalyticsTotals);
         console.log('Redirecting to home...');
         
         // Redirect to home

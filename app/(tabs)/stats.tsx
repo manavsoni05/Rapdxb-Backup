@@ -1,11 +1,14 @@
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, TrendingUp, Users, Award, ArrowUp, ArrowDown, MessageCircle, Heart, Share2, Eye, ThumbsUp } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Svg, { Path, Line } from 'react-native-svg';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
 
 const KEY_METRICS = [
   { label: 'Total Reach', value: '24.5K', change: '+12%', changeUp: true, icon: Users },
@@ -56,6 +59,81 @@ const PLATFORM_STATS = [
 export default function StatsScreen() {
   const insets = useSafeAreaInsets();
   const [expandedPlatform, setExpandedPlatform] = useState<string | null>(null);
+  const [platformAnalytics, setPlatformAnalytics] = useState<any>({});
+  const [connectedUsernames, setConnectedUsernames] = useState<any>({});
+  const [platformFollowers, setPlatformFollowers] = useState<any>([]);
+  const [connectionStatus, setConnectionStatus] = useState({
+    instagram: false,
+    youtube: false,
+    tiktok: false,
+  });
+
+  // Check connection status from API
+  const checkConnectionStatus = useCallback(async () => {
+    try {
+      const email = await AsyncStorage.getItem('email');
+      if (!email) {
+        return;
+      }
+
+      const response = await fetch(CHECK_STATUS_URL, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ email: email }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        setConnectionStatus({
+          instagram: data.isInstagramConnect || false,
+          youtube: data.isYoutubeConnect || false,
+          tiktok: data.isTiktokConnect || false,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to check connection status', error);
+    }
+  }, []);
+
+  // Load platform analytics and connected usernames from AsyncStorage
+  const loadAnalyticsData = useCallback(async () => {
+    try {
+      const storedAnalytics = await AsyncStorage.getItem('platformAnalyticsTotals');
+      if (storedAnalytics) {
+        setPlatformAnalytics(JSON.parse(storedAnalytics));
+      }
+      
+      const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
+      if (storedUsernames) {
+        setConnectedUsernames(JSON.parse(storedUsernames));
+      }
+
+      const storedFollowers = await AsyncStorage.getItem('platformFollowers');
+      if (storedFollowers) {
+        setPlatformFollowers(JSON.parse(storedFollowers));
+      }
+    } catch (error) {
+      console.error('Failed to load analytics data:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkConnectionStatus();
+    loadAnalyticsData();
+  }, [checkConnectionStatus, loadAnalyticsData]);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      checkConnectionStatus();
+      loadAnalyticsData();
+    }, [checkConnectionStatus, loadAnalyticsData])
+  );
 
   const handleBack = () => {
     if (Platform.OS !== 'web') {
@@ -70,6 +148,69 @@ export default function StatsScreen() {
     }
     setExpandedPlatform(expandedPlatform === platformName ? null : platformName);
   };
+
+  // Generate dynamic platform stats based on connected platforms
+  const generatePlatformStats = () => {
+    const platforms = [];
+    const platformConfig = {
+      instagram: {
+        name: 'Instagram',
+        icon: 'https://i.imgur.com/vkcuEzE.png',
+        color: ['#E1306C', '#C13584']
+      },
+      youtube: {
+        name: 'YouTube',
+        icon: 'https://i.imgur.com/8H35ptZ.png',
+        color: ['#FF0000', '#DC143C']
+      },
+      tiktok: {
+        name: 'TikTok',
+        icon: 'https://i.imgur.com/K2FKVUP.png',
+        color: ['#000000', '#333333']
+      }
+    };
+
+    // Show platforms that are connected based on connectionStatus
+    Object.keys(connectionStatus).forEach((platformKey) => {
+      const isConnected = connectionStatus[platformKey as keyof typeof connectionStatus];
+      if (isConnected && platformConfig[platformKey as keyof typeof platformConfig]) {
+        const config = platformConfig[platformKey as keyof typeof platformConfig];
+        const analytics = platformAnalytics[platformKey] || {
+          impressions: 0,
+          reach: 0,
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          views: 0
+        };
+
+        // Get follower count for this platform
+        const followerData = platformFollowers.find((pf: any) => pf.platform === platformKey);
+        const followerCount = followerData ? followerData.followers : 0;
+
+        const formatNumber = (num: number) => {
+          if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+          if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+          return num.toString();
+        };
+
+        platforms.push({
+          name: config.name,
+          followers: formatNumber(followerCount),
+          growth: '+0%',
+          growthUp: true,
+          totalReach: formatNumber(analytics.reach || 0),
+          icon: config.icon,
+          color: config.color,
+          analytics: analytics
+        });
+      }
+    });
+
+    return platforms;
+  };
+
+  const dynamicPlatformStats = generatePlatformStats();
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
@@ -94,7 +235,8 @@ export default function StatsScreen() {
           <Text style={styles.pageTitleBold}>Analytics</Text>
         </View>
 
-        <View style={styles.metricsGrid}>
+        {/* Commented out for now - Key Metrics Section */}
+        {/* <View style={styles.metricsGrid}>
           {KEY_METRICS.map((metric, index) => {
             const IconComponent = metric.icon;
             return (
@@ -117,9 +259,10 @@ export default function StatsScreen() {
               </View>
             );
           })}
-        </View>
+        </View> */}
 
-        <View style={styles.chartSection}>
+        {/* Commented out for now - Last 7 Days Performance Section */}
+        {/* <View style={styles.chartSection}>
           <Text style={styles.sectionTitle}>Last 7 Days Performance</Text>
           <View style={styles.chartCard}>
             <View style={styles.chartContainer}>
@@ -138,11 +281,17 @@ export default function StatsScreen() {
               ))}
             </View>
           </View>
-        </View>
+        </View> */}
 
         <View style={styles.platformSection}>
           <Text style={styles.sectionTitle}>Platform Breakdown</Text>
-          {PLATFORM_STATS.map((platform, index) => {
+          {dynamicPlatformStats.length === 0 ? (
+            <View style={styles.noPlatformsContainer}>
+              <Text style={styles.noPlatformsText}>No connected platforms yet</Text>
+              <Text style={styles.noPlatformsSubtext}>Connect your social media accounts to see analytics</Text>
+            </View>
+          ) : (
+            dynamicPlatformStats.map((platform, index) => {
             const isExpanded = expandedPlatform === platform.name;
             return (
               <TouchableOpacity
@@ -190,10 +339,6 @@ export default function StatsScreen() {
                               <View style={styles.statDot} />
                               <Text style={styles.quickStatText}>{platform.followers} followers</Text>
                             </View>
-                            <View style={styles.quickStatItem}>
-                              <View style={styles.statDot} />
-                              <Text style={styles.quickStatText}>{platform.totalReach} reach</Text>
-                            </View>
                           </View>
                         </View>
                       </View>
@@ -220,7 +365,7 @@ export default function StatsScreen() {
                             <View style={[styles.detailIconContainer, { backgroundColor: '#60a5fa15' }]}>
                               <Eye color="#60a5fa" size={18} strokeWidth={2} />
                             </View>
-                            <Text style={styles.detailValue}>15.2K</Text>
+                            <Text style={styles.detailValue}>{platform.analytics.views || 0}</Text>
                           </View>
                           <Text style={styles.detailLabel}>Views</Text>
                           <View style={styles.detailProgress}>
@@ -232,7 +377,7 @@ export default function StatsScreen() {
                             <View style={[styles.detailIconContainer, { backgroundColor: '#fbbf2415' }]}>
                               <Heart color="#fbbf24" size={18} strokeWidth={2} />
                             </View>
-                            <Text style={styles.detailValue}>8.2K</Text>
+                            <Text style={styles.detailValue}>{platform.analytics.likes || 0}</Text>
                           </View>
                           <Text style={styles.detailLabel}>Likes</Text>
                           <View style={styles.detailProgress}>
@@ -244,7 +389,7 @@ export default function StatsScreen() {
                             <View style={[styles.detailIconContainer, { backgroundColor: '#10b98115' }]}>
                               <Share2 color="#10b981" size={18} strokeWidth={2} />
                             </View>
-                            <Text style={styles.detailValue}>1.7K</Text>
+                            <Text style={styles.detailValue}>{platform.analytics.shares || 0}</Text>
                           </View>
                           <Text style={styles.detailLabel}>Shares</Text>
                           <View style={styles.detailProgress}>
@@ -253,14 +398,14 @@ export default function StatsScreen() {
                         </View>
                         <View style={styles.detailItem}>
                           <View style={styles.detailHeader}>
-                            <View style={[styles.detailIconContainer, { backgroundColor: '#8b5cf615' }]}>
-                              <TrendingUp color="#8b5cf6" size={18} strokeWidth={2} />
+                            <View style={[styles.detailIconContainer, { backgroundColor: '#ec48991A' }]}>
+                              <MessageCircle color="#ec4899" size={18} strokeWidth={2} />
                             </View>
-                            <Text style={styles.detailValue}>4.2%</Text>
+                            <Text style={styles.detailValue}>{platform.analytics.comments || 0}</Text>
                           </View>
-                          <Text style={styles.detailLabel}>Engagement</Text>
+                          <Text style={styles.detailLabel}>Comments</Text>
                           <View style={styles.detailProgress}>
-                            <View style={[styles.detailProgressBar, { width: '55%', backgroundColor: '#8b5cf6' }]} />
+                            <View style={[styles.detailProgressBar, { width: '55%', backgroundColor: '#ec4899' }]} />
                           </View>
                         </View>
                       </View>
@@ -269,7 +414,8 @@ export default function StatsScreen() {
                 </View>
               </TouchableOpacity>
             );
-          })}
+          }))
+          }
         </View>
       </ScrollView>
     </View>
@@ -613,5 +759,27 @@ const styles = StyleSheet.create({
   detailProgressBar: {
     height: '100%',
     borderRadius: 2,
+  },
+  noPlatformsContainer: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  noPlatformsText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontFamily: 'Archivo-SemiBold',
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  noPlatformsSubtext: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    textAlign: 'center',
+    letterSpacing: -0.2,
   },
 });
