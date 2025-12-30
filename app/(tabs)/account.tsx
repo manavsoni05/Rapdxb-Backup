@@ -1,12 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, Alert, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, User, Bell, Lock, CreditCard, LogOut, Check, Plus, Camera } from 'lucide-react-native';
+import { ArrowLeft, User, Bell, Lock, CreditCard, LogOut, Check, Plus } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
+// import * as ImagePicker from 'expo-image-picker'; // Commented out - upload disabled
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+// import { supabase } from '../../lib/supabase'; // Commented out - upload disabled
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
@@ -19,8 +19,9 @@ const SETTINGS_OPTIONS = [
 
 export default function AccountScreen() {
   const insets = useSafeAreaInsets();
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png');
-  const [uploading, setUploading] = useState(false);
+  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
+  const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+  // const [uploading, setUploading] = useState(false); // Commented out - upload functionality disabled
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<any>(null);
   const [connectingPlatform, setConnectingPlatform] = useState(false);
@@ -35,6 +36,25 @@ export default function AccountScreen() {
   ]);
 
   useEffect(() => {
+    // Load user data from AsyncStorage
+    const loadUserData = async () => {
+      try {
+        const storedFullName = await AsyncStorage.getItem('fullName');
+        if (storedFullName) {
+          setFullName(storedFullName);
+        }
+
+        // Load profile image from AsyncStorage (set during login if Instagram is connected)
+        const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+        if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
+          setProfileImage(storedProfileUrl);
+        }
+      } catch (error) {
+        console.error('Failed to load user data:', error);
+      }
+    };
+    loadUserData();
+    
     // Check connection status when component mounts
     const checkInitialStatus = async () => {
       setCheckingStatus(true);
@@ -86,6 +106,9 @@ export default function AccountScreen() {
     router.replace('/(tabs)/home');
   };
 
+  // PROFILE PICTURE UPLOAD DISABLED
+  // Profile picture now comes from Instagram connection during login
+  /*
   const handleImagePicker = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -117,7 +140,10 @@ export default function AccountScreen() {
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
+  */
 
+  // PROFILE PICTURE UPLOAD DISABLED
+  /*
   const uploadImage = async (uri: string) => {
     try {
       setUploading(true);
@@ -167,6 +193,7 @@ export default function AccountScreen() {
       setUploading(false);
     }
   };
+  */
 
   const handleConnect = async (platform: any) => {
     if (Platform.OS !== 'web') {
@@ -366,23 +393,16 @@ export default function AccountScreen() {
           style={styles.profileCard}
         >
           <View style={styles.profileContent}>
-            <TouchableOpacity onPress={handleImagePicker} activeOpacity={0.8} disabled={uploading}>
-              <View style={styles.profileImageContainer}>
-                <Image
-                  source={{ uri: profileImage }}
-                  style={styles.profileImage}
-                />
-                <View style={styles.cameraOverlay}>
-                  {uploading ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Camera color="#ffffff" size={20} strokeWidth={2} />
-                  )}
-                </View>
-              </View>
-            </TouchableOpacity>
+            {/* PROFILE PICTURE UPLOAD DISABLED - Image comes from Instagram connection */}
+            <View style={styles.profileImageContainer}>
+              <Image
+                source={{ uri: profileImage, cache: 'reload' }}
+                style={styles.profileImage}
+              />
+              {/* Camera overlay disabled */}
+            </View>
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>RAPDXB</Text>
+              <Text style={styles.profileName}>{fullName}</Text>
               <Image
                 source={{ uri: 'https://i.imgur.com/5rF4a1S.png' }}
                 style={styles.verifiedBadge}

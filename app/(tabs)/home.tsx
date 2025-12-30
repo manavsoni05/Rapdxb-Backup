@@ -47,6 +47,7 @@ export default function HomeScreen() {
     { id: 3, text: 'Just Posted To Website', read: false, icon: 'website', time: '3h ago', color: '#10b981' },
   ]);
   const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
   const [platformAnalytics, setPlatformAnalytics] = useState<any>({});
   const [totalFollowers, setTotalFollowers] = useState(0);
   const [totalLikes, setTotalLikes] = useState(0);
@@ -57,6 +58,12 @@ export default function HomeScreen() {
       const storedFullName = await AsyncStorage.getItem('fullName');
       if (storedFullName) {
         setFullName(storedFullName);
+      }
+
+      // Load profile image from AsyncStorage (set during login if Instagram is connected)
+      const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+      if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
+        setProfileImage(storedProfileUrl);
       }
 
       // Load total followers from AsyncStorage
@@ -246,7 +253,7 @@ export default function HomeScreen() {
             activeOpacity={0.6}
           >
             <Image
-              source={{ uri: 'https://i.imgur.com/vhILBC1.png' }}
+              source={{ uri: profileImage, cache: 'reload' }}
               style={styles.profileImage}
             />
           </TouchableOpacity>

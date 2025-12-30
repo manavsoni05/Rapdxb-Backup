@@ -1,389 +1,331 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, Animated, TextInput, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, TextInput, KeyboardAvoidingView, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Menu, ArrowUp, Bot, X, Plus, MessageSquare, Edit2, Trash2 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Link, Check, Globe, Plus, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useState, useRef } from 'react';
-import * as Clipboard from 'expo-clipboard';
+import { useState, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const FEED_DATA = [
-  {
-    id: 1,
-    platform: 'Instagram',
-    platformIcon: 'https://i.imgur.com/vkcuEzE.png',
-    thumbnail: 'https://images.pexels.com/photos/1105666/pexels-photo-1105666.jpeg?auto=compress&cs=tinysrgb&w=800',
-    title: 'Drake Announces New Album "For All The Dogs"',
-    source: '@complexmusic',
-    description: 'Drake reveals surprise album dropping next week with features from Travis Scott and 21 Savage. The Canadian rapper shared the news on his Instagram story late last night, sending fans into a frenzy.',
-    timeAgo: '1h ago',
-    url: 'https://www.instagram.com/p/drake-announces-new-album',
-  },
-  {
-    id: 2,
-    platform: 'YouTube',
-    platformIcon: 'https://i.imgur.com/8H35ptZ.png',
-    thumbnail: 'https://images.pexels.com/photos/1763075/pexels-photo-1763075.jpeg?auto=compress&cs=tinysrgb&w=800',
-    title: 'Kendrick Lamar Live Performance Breakdown',
-    source: '@geniusofficial',
-    description: 'Watch Kendrick deliver an electrifying performance at Rolling Loud. His stage presence and lyrical prowess continue to set him apart as one of the greatest performers of our generation.',
-    timeAgo: '2h ago',
-    url: 'https://www.youtube.com/watch?v=kendrick-lamar-performance',
-  },
-  {
-    id: 3,
-    platform: 'TikTok',
-    platformIcon: 'https://i.imgur.com/K2FKVUP.png',
-    thumbnail: 'https://images.pexels.com/photos/1190297/pexels-photo-1190297.jpeg?auto=compress&cs=tinysrgb&w=800',
-    title: 'Ice Spice New Single Goes Viral',
-    source: '@rapvibes',
-    description: 'Ice Spice breaks the internet with her latest drop. The Bronx rapper\'s infectious flow and catchy hooks have TikTok users creating thousands of videos to the track.',
-    timeAgo: '3h ago',
-    url: 'https://www.tiktok.com/@rapvibes/video/ice-spice-viral',
-  },
-  {
-    id: 4,
-    platform: 'Web',
-    platformIcon: 'https://i.imgur.com/aXfHxEZ.png',
-    thumbnail: 'https://images.pexels.com/photos/1644888/pexels-photo-1644888.jpeg?auto=compress&cs=tinysrgb&w=800',
-    title: 'J. Cole Talks About His Songwriting Process',
-    source: 'Complex Interview',
-    description: 'In an exclusive interview, J. Cole opens up about his creative approach to making music. The North Carolina rapper discusses how he crafts his introspective lyrics and conceptual albums.',
-    timeAgo: '4h ago',
-    url: 'https://www.complex.com/music/j-cole-songwriting-process-interview',
-  },
-];
-
-const FILTERS = [
-  { name: 'Posts', colors: ['#60a5fa', '#3b82f6'] },
-  { name: 'Stories', colors: ['#fb923c', '#f97316'] },
-];
+interface Message {
+  id: number;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}
 
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
-  const [selectedFilter, setSelectedFilter] = useState('Posts');
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [showAddFeedModal, setShowAddFeedModal] = useState(false);
-  const [feedUrl, setFeedUrl] = useState('');
-  const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastTranslateY = useRef(new Animated.Value(-20)).current;
+  const [fullName, setFullName] = useState('RAPDXB');
+  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png');
+  const [message, setMessage] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [showSidebar, setShowSidebar] = useState(false);
+  const [chats, setChats] = useState<Array<{id: number, title: string, lastMessage: string}>>([]);
+  const [currentChatId, setCurrentChatId] = useState<number | null>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sidebarAnim = useRef(new Animated.Value(-320)).current;
 
-  const handleBack = () => {
+  // Load user data
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const storedFullName = await AsyncStorage.getItem('fullName');
+        if (storedFullName) {
+          setFullName(storedFullName);
+        }
+        const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+        if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
+          setProfileImage(storedProfileUrl);
+        }
+      } catch (error) {
+        console.error('Failed to load user data:', error);
+      }
+    };
+    loadUserData();
+  }, []);
+
+  const handleNewChat = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    router.replace('/(tabs)/home');
+    
+    // Save current chat if it has messages
+    if (messages.length > 0 && currentChatId === null) {
+      const newChat = {
+        id: Date.now(),
+        title: messages[0].text.substring(0, 30) + (messages[0].text.length > 30 ? '...' : ''),
+        lastMessage: messages[messages.length - 1].text,
+      };
+      setChats([newChat, ...chats]);
+    }
+    
+    // Start new chat
+    setMessages([]);
+    setCurrentChatId(null);
   };
 
-  const handleFilterPress = (filter: string) => {
+  const handleDeleteChat = (chatId: number) => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setSelectedFilter(filter);
+    setChats(chats.filter(chat => chat.id !== chatId));
   };
 
-  const showCustomToast = (message: string) => {
-    setToastMessage(message);
-    setShowToast(true);
+  useEffect(() => {
+    Animated.timing(sidebarAnim, {
+      toValue: showSidebar ? 0 : -320,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [showSidebar]);
 
-    Animated.parallel([
-      Animated.timing(toastOpacity, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(toastTranslateY, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
+  const handleSendMessage = () => {
+    if (!message.trim()) return;
 
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    const newMessage: Message = {
+      id: Date.now(),
+      text: message.trim(),
+      isUser: true,
+      timestamp: new Date(),
+    };
+
+    setMessages([...messages, newMessage]);
+    setMessage('');
+
+    // Simulate bot response
     setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(toastOpacity, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(toastTranslateY, {
-          toValue: -20,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        setShowToast(false);
-        toastTranslateY.setValue(-20);
-      });
-    }, 2000);
+      const botMessage: Message = {
+        id: Date.now() + 1,
+        text: "I'm your AI assistant. How can I help you today?",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, botMessage]);
+      
+      // Scroll to bottom after bot response
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }, 1000);
+
+    // Scroll to bottom after sending
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   };
 
-  const handleCopyLink = async (item: any) => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    await Clipboard.setStringAsync(item.url);
-    showCustomToast('Link copied to clipboard!');
-  };
-
-  const handleAddFeed = () => {
+  const handleMenuPress = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setShowAddFeedModal(true);
+    setShowSidebar(!showSidebar);
   };
-
-  const handleCloseAddFeedModal = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    setShowAddFeedModal(false);
-    setFeedUrl('');
-  };
-
-  const handleSubmitFeed = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-    console.log('Adding feed:', feedUrl);
-    showCustomToast('Feed added successfully!');
-    setShowAddFeedModal(false);
-    setFeedUrl('');
-  };
-
-  const filteredFeed = FEED_DATA;
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
-        showsVerticalScrollIndicator={false}
-      >
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonGradient}
-            onPress={handleBack}
-            activeOpacity={0.6}
-          >
-            <ArrowLeft color="#ffffff" size={18} strokeWidth={1.5} />
-          </TouchableOpacity>
-          <View style={styles.placeholder} />
-        </View>
-
-        <View style={styles.titleSection}>
-          <Text style={styles.pageTitle}>Your </Text>
-          <Text style={styles.pageTitleBold}>Feed</Text>
-        </View>
-
-        <View style={styles.topSection}>
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>{FEED_DATA.length}</Text>
-              <Text style={styles.statLabel}>Articles</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>4</Text>
-              <Text style={styles.statLabel}>Sources</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>6</Text>
-              <Text style={styles.statLabel}>Platforms</Text>
-            </View>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity
+              style={styles.menuButton}
+              onPress={handleMenuPress}
+              activeOpacity={0.7}
+            >
+              <Menu color="#ffffff" size={24} strokeWidth={2} />
+            </TouchableOpacity>
           </View>
           <TouchableOpacity
-            onPress={handleAddFeed}
+            style={styles.newChatButton}
+            onPress={handleNewChat}
             activeOpacity={0.7}
-            style={styles.addFeedButton}
           >
-            <LinearGradient
-              colors={['#60a5fa', '#3b82f6']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.addFeedButtonInner}
-            >
-              <Plus color="#ffffff" size={18} strokeWidth={2.5} />
-              <Text style={styles.addFeedButtonText}>Add Feed</Text>
-            </LinearGradient>
+            <Plus color="#ffffff" size={24} strokeWidth={2} />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.filterToggleContainer}>
-          <View style={styles.filterToggleBackground}>
-            {FILTERS.map((filter, index) => {
-              const isSelected = selectedFilter === filter.name;
-              return (
-                <TouchableOpacity
-                  key={filter.name}
-                  onPress={() => handleFilterPress(filter.name)}
-                  activeOpacity={0.8}
-                  style={styles.filterToggleOption}
+        {/* Chat Area */}
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.chatContainer}
+          contentContainerStyle={[
+            styles.chatContent,
+            { paddingBottom: 140 }
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          {messages.length === 0 ? (
+            <View style={styles.welcomeContainer}>
+              <Text style={styles.welcomeText}>
+                Hi, {fullName}
+              </Text>
+              <Text style={styles.welcomeSubtext}>
+                How may I help you?
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.messagesContainer}>
+              {messages.map((msg) => (
+                <View
+                  key={msg.id}
+                  style={[
+                    styles.messageWrapper,
+                    msg.isUser ? styles.userMessageWrapper : styles.botMessageWrapper
+                  ]}
                 >
-                  {isSelected ? (
-                    <LinearGradient
-                      colors={filter.colors}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.filterToggleSelected}
-                    >
-                      <Text style={styles.filterToggleTextActive}>
-                        {filter.name}
-                      </Text>
-                    </LinearGradient>
-                  ) : (
-                    <View style={styles.filterToggleUnselected}>
-                      <Text style={styles.filterToggleText}>
-                        {filter.name}
-                      </Text>
+                  {!msg.isUser && (
+                    <View style={styles.botAvatar}>
+                      <Bot color="#ffffff" size={20} strokeWidth={2} />
                     </View>
                   )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.feedList}>
-          {filteredFeed.map((item, index) => (
-            <View key={item.id} style={styles.feedCardWrapper}>
-              <LinearGradient
-                colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.feedCard}
-              >
-                <View style={styles.cardTopSection}>
-                  <View style={styles.cardHeader}>
-                    <View style={styles.platformBadge}>
-                      {item.platform === 'Web' ? (
-                        <Globe color="#6B7280" size={16} strokeWidth={2} />
-                      ) : (
-                        <Image
-                          source={{ uri: item.platformIcon }}
-                          style={styles.platformIconSmall}
-                        />
-                      )}
-                    </View>
-                    <View style={styles.cardMeta}>
-                      <Text style={styles.cardSource}>{item.source}</Text>
-                      <Text style={styles.timeAgo}>{item.timeAgo}</Text>
-                    </View>
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      msg.isUser ? styles.userMessage : styles.botMessage
+                    ]}
+                  >
+                    <Text style={[
+                      styles.messageText,
+                      msg.isUser ? styles.userMessageText : styles.botMessageText
+                    ]}>
+                      {msg.text}
+                    </Text>
                   </View>
-
-                  <Image
-                    source={{ uri: item.thumbnail }}
-                    style={styles.thumbnail}
-                    resizeMode="cover"
-                  />
+                  {msg.isUser && (
+                    <Image
+                      source={{ uri: profileImage }}
+                      style={styles.userAvatar}
+                    />
+                  )}
                 </View>
-
-                <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle}>{item.title}</Text>
-                  <Text style={styles.cardDescription}>
-                    {item.description}
-                  </Text>
-
-                  <View style={styles.cardFooter}>
-                    <View style={styles.platformTag}>
-                      <View style={[styles.platformDot, { backgroundColor: item.platform === 'Instagram' ? '#E1306C' : item.platform === 'YouTube' ? '#FF0000' : item.platform === 'TikTok' ? '#69C9D0' : '#6B7280' }]} />
-                      <Text style={styles.platformTagText}>{item.platform}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={() => handleCopyLink(item)}
-                      activeOpacity={0.7}
-                      style={styles.copyButton}
-                    >
-                      <LinearGradient
-                        colors={['rgba(96, 165, 250, 0.2)', 'rgba(59, 130, 246, 0.2)']}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.copyButtonInner}
-                      >
-                        <Link color="#60a5fa" size={16} strokeWidth={2} />
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </LinearGradient>
+              ))}
             </View>
-          ))}
-        </View>
-      </ScrollView>
+          )}
+        </ScrollView>
 
-      {showToast && (
-        <Animated.View
-          style={[
-            styles.toastContainer,
-            {
-              opacity: toastOpacity,
-              transform: [{ translateY: toastTranslateY }],
-              top: insets.top + 60,
-            },
-          ]}
-        >
-          <View style={styles.toastGradient}>
-            <View style={styles.toastIconContainer}>
-              <Check color="#ffffff" size={22} strokeWidth={3.5} />
-            </View>
-            <Text style={styles.toastText}>{toastMessage}</Text>
+        {/* Input Area */}
+        <View style={[styles.inputContainer, { marginBottom: 120 }]}>
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.input}
+              placeholder="Message..."
+              placeholderTextColor="rgba(255, 255, 255, 0.4)"
+              value={message}
+              onChangeText={setMessage}
+              multiline
+              maxLength={500}
+            />
           </View>
-        </Animated.View>
-      )}
+          <TouchableOpacity
+            style={[styles.sendButton, !message.trim() && styles.sendButtonDisabled]}
+            onPress={handleSendMessage}
+            activeOpacity={0.7}
+            disabled={!message.trim()}
+          >
+            <ArrowUp color="#000000" size={20} strokeWidth={2.5} />
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <Modal
-        visible={showAddFeedModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handleCloseAddFeedModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Feed</Text>
+      {/* Sidebar Modal */}
+      {showSidebar && (
+        <View style={styles.sidebarOverlay}>
+          <TouchableOpacity 
+            style={styles.sidebarOverlayTouchable} 
+            activeOpacity={1}
+            onPress={() => setShowSidebar(false)}
+          />
+          <Animated.View 
+            style={[styles.sidebarContainer, { transform: [{ translateX: sidebarAnim }] }]}
+          >
+            <View style={styles.sidebarHeader}>
+              <View style={styles.sidebarHeaderContent}>
+                <Bot color="#ffffff" size={24} strokeWidth={2} />
+                <Text style={styles.sidebarTitle}>Chat History</Text>
+              </View>
               <TouchableOpacity
-                onPress={handleCloseAddFeedModal}
+                onPress={() => setShowSidebar(false)}
+                style={styles.sidebarCloseButton}
                 activeOpacity={0.7}
-                style={styles.modalCloseButton}
               >
                 <X color="#ffffff" size={20} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalLabel}>Feed URL</Text>
-              <View style={styles.modalInputWrapper}>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="https://..."
-                  placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                  value={feedUrl}
-                  onChangeText={setFeedUrl}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-              </View>
-              <TouchableOpacity
-                onPress={handleSubmitFeed}
-                activeOpacity={0.8}
-                style={[styles.modalSubmitButton, !feedUrl && styles.modalSubmitButtonDisabled]}
-                disabled={!feedUrl}
-              >
-                <LinearGradient
-                  colors={['#60a5fa', '#3b82f6']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.modalSubmitButtonInner}
-                >
-                  <Text style={styles.modalSubmitButtonText}>Add Feed</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
 
-    </View>
+            <ScrollView style={styles.sidebarContent}>
+              <TouchableOpacity
+                style={styles.sidebarNewChatButton}
+                activeOpacity={0.7}
+                onPress={() => {
+                  handleNewChat();
+                  setShowSidebar(false);
+                }}
+              >
+                <Plus color="#ffffff" size={20} strokeWidth={2} />
+                <Text style={styles.sidebarNewChatText}>New Chat</Text>
+              </TouchableOpacity>
+
+              {chats.length > 0 && (
+                <View style={styles.sidebarSection}>
+                  <Text style={styles.sidebarSectionTitle}>Recent Chats</Text>
+                  <View style={styles.sidebarChatList}>
+                    {chats.map((chat) => (
+                      <View key={chat.id} style={styles.sidebarChatItem}>
+                        <MessageSquare color="rgba(255, 255, 255, 0.6)" size={18} strokeWidth={2} />
+                        <Text style={styles.sidebarChatText} numberOfLines={1}>{chat.title}</Text>
+                        <View style={styles.sidebarChatActions}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (Platform.OS !== 'web') {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              }
+                              // TODO: Implement rename functionality
+                            }}
+                            style={styles.sidebarChatActionButton}
+                            activeOpacity={0.7}
+                          >
+                            <Edit2 color="rgba(255, 255, 255, 0.5)" size={16} strokeWidth={2} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteChat(chat.id)}
+                            style={styles.sidebarChatActionButton}
+                            activeOpacity={0.7}
+                          >
+                            <Trash2 color="rgba(255, 100, 100, 0.8)" size={16} strokeWidth={2} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {messages.length > 0 && currentChatId === null && (
+                <View style={styles.sidebarSection}>
+                  <Text style={styles.sidebarSectionTitle}>Current Chat</Text>
+                  <View style={styles.sidebarChatList}>
+                    <View style={styles.sidebarChatItem}>
+                      <MessageSquare color="rgba(96, 165, 250, 0.8)" size={18} strokeWidth={2} />
+                      <Text style={styles.sidebarChatText} numberOfLines={1}>
+                        {messages[0]?.text.substring(0, 30)}{messages[0]?.text.length > 30 ? '...' : ''}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </Animated.View>
+        </View>
+      )}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -392,396 +334,299 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  scrollContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  backButtonGradient: {
-    width: 48,
-    height: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 24,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  placeholder: {
-    width: 48,
-  },
-  titleSection: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 24,
-    alignItems: 'center',
-  },
-  pageTitle: {
-    fontSize: 44,
-    fontFamily: 'Inter-Thin',
-    color: '#ffffff',
-    letterSpacing: -1.2,
-    lineHeight: 50,
-  },
-  pageTitleBold: {
-    fontSize: 44,
-    fontFamily: 'Archivo-Bold',
-    color: '#fb923c',
-    letterSpacing: -1.2,
-    lineHeight: 50,
-  },
-  topSection: {
-    gap: 16,
-    marginBottom: 24,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  addFeedButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#60a5fa',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  addFeedButtonInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  addFeedButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.2,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    padding: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  statValue: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontFamily: 'Inter-SemiBold',
-    letterSpacing: -1,
-    marginBottom: 4,
-  },
-  statLabel: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 11,
-    fontFamily: 'Inter-Regular',
-    letterSpacing: 0.2,
-    textTransform: 'uppercase',
-  },
-  filterToggleContainer: {
-    marginBottom: 24,
-  },
-  filterToggleBackground: {
-    flexDirection: 'row',
-    borderRadius: 20,
-    padding: 4,
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  filterToggleOption: {
-    flex: 1,
-  },
-  filterToggleSelected: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterToggleUnselected: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterToggleText: {
-    color: 'rgba(255, 255, 255, 0.4)',
-    fontSize: 14,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.2,
-  },
-  filterToggleTextActive: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.2,
-  },
-  feedList: {
-    gap: 20,
-  },
-  feedCardWrapper: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  feedCard: {
-    padding: 20,
-    gap: 16,
-  },
-  cardTopSection: {
-    gap: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  platformBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  platformIconSmall: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-  },
-  cardMeta: {
-    flex: 1,
-  },
-  cardSource: {
-    color: '#60a5fa',
-    fontSize: 14,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.2,
-    marginBottom: 2,
-  },
-  timeAgo: {
-    color: 'rgba(255, 255, 255, 0.3)',
-    fontSize: 11,
-    fontFamily: 'Inter-Regular',
-    letterSpacing: 0.2,
-  },
-  thumbnail: {
-    width: '100%',
-    height: 180,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  cardContent: {
-    gap: 12,
-  },
-  cardTitle: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.4,
-    lineHeight: 26,
-  },
-  cardDescription: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 14,
-    fontFamily: 'Inter-Regular',
-    letterSpacing: 0.2,
-    lineHeight: 22,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  platformTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  platformDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  platformTagText: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 12,
-    fontFamily: 'Inter-Regular',
-    letterSpacing: 0.2,
-  },
-  copyButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  copyButtonInner: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(96, 165, 250, 0.3)',
-    borderRadius: 12,
-    shadowColor: '#60a5fa',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  toastContainer: {
-    position: 'absolute',
-    left: 20,
-    right: 20,
-    zIndex: 1000,
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  toastGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
-    gap: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#000000',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
-    shadowColor: '#10b981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  toastIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  toastText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.4,
-    flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  modalContainer: {
-    width: '100%',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  modalTitle: {
-    color: '#ffffff',
-    fontSize: 20,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.4,
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  modalCloseButton: {
+  menuButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalContent: {
-    padding: 20,
-    gap: 16,
-  },
-  modalLabel: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontFamily: 'Archivo-Bold',
-    letterSpacing: -0.3,
-  },
-  modalInputWrapper: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 16,
+    borderRadius: 20,
+    backgroundColor: '#1a1a1a',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  modalInput: {
+  newChatButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 20,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  chatContent: {
+    flexGrow: 1,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+  },
+  welcomeContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 100,
+  },
+  welcomeText: {
+    fontSize: 32,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 8,
+  },
+  welcomeSubtext: {
+    fontSize: 18,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  messagesContainer: {
+    paddingTop: 20,
+    paddingBottom: 20,
+    gap: 16,
+  },
+  messageWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  userMessageWrapper: {
+    justifyContent: 'flex-end',
+  },
+  botMessageWrapper: {
+    justifyContent: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '75%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 18,
+  },
+  userMessage: {
+    backgroundColor: '#ffffff',
+    borderBottomRightRadius: 4,
+  },
+  botMessage: {
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 15,
+    fontFamily: 'Inter-Regular',
+    lineHeight: 22,
+    letterSpacing: -0.1,
+    color: '#ffffff',
+  },
+  userMessageText: {
+    color: '#000000',
+  },
+  botMessageText: {
+    color: '#ffffff',
+  },
+  userAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  botAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: '#000000',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 8,
+    alignItems: 'center',
+  },
+  inputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 44,
+    maxHeight: 120,
+  },
+  input: {
+    flex: 1,
     color: '#ffffff',
     fontSize: 15,
     fontFamily: 'Inter-Regular',
+    letterSpacing: -0.1,
+    paddingVertical: 4,
+    maxHeight: 100,
+    outlineStyle: 'none',
   },
-  modalSubmitButton: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginTop: 8,
-  },
-  modalSubmitButtonDisabled: {
-    opacity: 0.5,
-  },
-  modalSubmitButtonInner: {
-    paddingVertical: 16,
-    alignItems: 'center',
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  modalSubmitButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
+  sendButtonDisabled: {
+    opacity: 0.4,
+  },
+  sidebarOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    zIndex: 1000,
+  },
+  sidebarOverlayTouchable: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  sidebarContainer: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 320,
+    backgroundColor: '#000000',
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 1001,
+  },
+  sidebarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingTop: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sidebarHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sidebarTitle: {
+    fontSize: 18,
     fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
     letterSpacing: -0.3,
+  },
+  sidebarCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1a1a1a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sidebarContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  sidebarNewChatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 24,
+  },
+  sidebarNewChatText: {
+    fontSize: 15,
+    fontFamily: 'Archivo-Bold',
+    color: '#ffffff',
+    letterSpacing: -0.2,
+  },
+  sidebarSection: {
+    gap: 12,
+  },
+  sidebarSectionTitle: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.5)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  sidebarChatList: {
+    gap: 8,
+  },
+  sidebarChatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  sidebarChatText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: 'rgba(255, 255, 255, 0.8)',
+    letterSpacing: -0.1,
+  },
+  sidebarChatActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sidebarChatActionButton: {
+    width: 28,
+    height: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
 });

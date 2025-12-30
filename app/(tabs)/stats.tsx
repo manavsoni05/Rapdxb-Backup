@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,6 +62,7 @@ export default function StatsScreen() {
   const [platformAnalytics, setPlatformAnalytics] = useState<any>({});
   const [connectedUsernames, setConnectedUsernames] = useState<any>({});
   const [platformFollowers, setPlatformFollowers] = useState<any>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState({
     instagram: false,
     youtube: false,
@@ -94,9 +95,11 @@ export default function StatsScreen() {
           youtube: data.isYoutubeConnect || false,
           tiktok: data.isTiktokConnect || false,
         });
+        setIsLoading(false);
       }
     } catch (error) {
       console.error('Failed to check connection status', error);
+      setIsLoading(false);
     }
   }, []);
 
@@ -214,6 +217,11 @@ export default function StatsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      {isLoading ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#8b5cf6" />
+        </View>
+      ) : (
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
@@ -418,6 +426,7 @@ export default function StatsScreen() {
           }
         </View>
       </ScrollView>
+      )}
     </View>
   );
 }
@@ -425,6 +434,12 @@ export default function StatsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     backgroundColor: '#000000',
   },
   scrollContainer: {

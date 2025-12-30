@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft, Check, Edit2, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import * as ImagePicker from 'expo-image-picker';
+// import * as ImagePicker from 'expo-image-picker'; // Commented out - upload disabled
 import { useState, useEffect, useCallback, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -28,15 +28,15 @@ const UPDATE_USER_DETAIL_URL = 'https://n8n-production-0558.up.railway.app/webho
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [showEditModal, setShowEditModal] = useState(false);
-  const [profileName, setProfileName] = useState('RAPDXB');
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png');
-  const [editName, setEditName] = useState(profileName);
-  const [editImage, setEditImage] = useState(profileImage);
-  const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
+  const [profileName, setProfileName] = useState('');
+  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
+  const [editName, setEditName] = useState('');
+  // const [editImage, setEditImage] = useState('https://i.imgur.com/vhILBC1.png'); // Commented out - not used for editing anymore
+  const [fullName, setFullName] = useState(''); // Default fallback
   const [platformCount, setPlatformCount] = useState(0); // Platform count from API
   const [totalFollowers, setTotalFollowers] = useState(0); // Total followers from API
   const [totalLikes, setTotalLikes] = useState(0); // Total likes from all platforms
-  const [connectedUsernames, setConnectedUsernames] = useState<{instagram?: string; tiktok?: string; youtube?: string}>({}); // Connected usernames
+  const [connectedUsernames, setConnectedUsernames] = useState<{instagram?: string; tiktok?: string; youtube?: string}>({instagram: undefined, tiktok: undefined, youtube: undefined}); // Connected usernames - explicit initialization
   const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({
     instagram: false,
@@ -52,7 +52,6 @@ export default function SettingsScreen() {
     try {
       const email = await AsyncStorage.getItem('email');
       if (!email) {
-        console.log('No email found in storage');
         return;
       }
 
@@ -68,21 +67,38 @@ export default function SettingsScreen() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Connection status:', data);
         
         setConnectionStatus({
-          instagram: data.isInstagramConnect ,
-          youtube: data.isYoutubeConnect ,
-          tiktok: data.isTiktokConnect ,
+          instagram: data.isInstagramConnect || false,
+          youtube: data.isYoutubeConnect || false,
+          tiktok: data.isTiktokConnect || false,
         });
         
         // Extract platformCount from API response
         if (data.platformCount !== undefined) {
           setPlatformCount(data.platformCount);
         }
+        
+        // Always reload usernames from AsyncStorage after connection check
+        try {
+          const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
+          if (storedUsernames) {
+            const usernames = JSON.parse(storedUsernames);
+            // Ensure we have a valid object with proper keys
+            if (usernames && typeof usernames === 'object') {
+              setConnectedUsernames({
+                instagram: usernames.instagram || undefined,
+                tiktok: usernames.tiktok || undefined,
+                youtube: usernames.youtube || undefined,
+              });
+            }
+          }
+        } catch (parseError) {
+          // If parsing fails, just log and continue
+        }
       }
     } catch (error) {
-      console.error('Failed to check connection status', error);
+      // Silently handle connection check errors
     }
   }, []);
 
@@ -90,53 +106,77 @@ export default function SettingsScreen() {
     checkConnectionStatus();
   }, [checkConnectionStatus]);
 
-  // Fetch fullName, totalFollowers, and connectedUsernames from AsyncStorage on component mount
-  useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const storedFullName = await AsyncStorage.getItem('fullName');
-        if (storedFullName) {
-          setFullName(storedFullName);
-        }
-        
-        const storedFollowers = await AsyncStorage.getItem('totalFollowers');
-        if (storedFollowers) {
-          setTotalFollowers(parseInt(storedFollowers, 10));
-        }
-        
-        const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
-        if (storedUsernames) {
-          setConnectedUsernames(JSON.parse(storedUsernames));
-        }
-
-        const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
-        if (storedProfileUrl) {
-          setProfileImage(storedProfileUrl);
-        }
-
-        // Calculate total likes from all platforms
-        const storedAnalytics = await AsyncStorage.getItem('platformAnalyticsTotals');
-        if (storedAnalytics) {
-          const analytics = JSON.parse(storedAnalytics);
-          let totalLikesCount = 0;
-          Object.keys(analytics).forEach((platform) => {
-            if (analytics[platform]?.likes) {
-              totalLikesCount += analytics[platform].likes;
-            }
-          });
-          setTotalLikes(totalLikesCount);
-        }
-      } catch (error) {
-        console.error('Failed to load user data:', error);
+  // Fetch fullName, totalFollowers, and connectedUsernames from AsyncStorage
+  const loadUserData = useCallback(async () => {
+    try {
+      const storedFullName = await AsyncStorage.getItem('fullName');
+      if (storedFullName) {
+        setFullName(storedFullName);
+        setProfileName(storedFullName);
       }
-    };
-    loadUserData();
+      
+      const storedFollowers = await AsyncStorage.getItem('totalFollowers');
+      if (storedFollowers) {
+        setTotalFollowers(parseInt(storedFollowers, 10));
+      }
+      
+      // Load connected usernames with proper error handling
+      const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
+      if (storedUsernames) {
+        try {
+          const usernames = JSON.parse(storedUsernames);
+          // Ensure we have a valid object with proper keys
+          if (usernames && typeof usernames === 'object') {
+            setConnectedUsernames({
+              instagram: usernames.instagram || undefined,
+              tiktok: usernames.tiktok || undefined,
+              youtube: usernames.youtube || undefined,
+            });
+          }
+        } catch (parseError) {
+          // If parsing fails, set to empty object
+          setConnectedUsernames({
+            instagram: undefined,
+            tiktok: undefined,
+            youtube: undefined,
+          });
+        }
+      }
+
+      // Load profile image from AsyncStorage (set during login if Instagram is connected)
+      const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+      if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
+        setProfileImage(storedProfileUrl);
+      }
+
+      // Calculate total likes from all platforms
+      const storedAnalytics = await AsyncStorage.getItem('platformAnalyticsTotals');
+      if (storedAnalytics) {
+        const analytics = JSON.parse(storedAnalytics);
+        let totalLikesCount = 0;
+        Object.keys(analytics).forEach((platform) => {
+          if (analytics[platform]?.likes) {
+            totalLikesCount += analytics[platform].likes;
+          }
+        });
+        setTotalLikes(totalLikesCount);
+      }
+    } catch (error) {
+      // Silently handle errors - component will use default values
+    }
   }, []);
 
+  // Load user data on component mount
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
+
+  // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       checkConnectionStatus();
-    }, [checkConnectionStatus])
+      loadUserData(); // Reload user data including usernames
+    }, [checkConnectionStatus, loadUserData])
   );
 
   const handlePlatformPress = async (platformId: string) => {
@@ -293,11 +333,15 @@ export default function SettingsScreen() {
     }
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    checkConnectionStatus().finally(() => {
+    console.log('🔄 Manual refresh triggered');
+    try {
+      await checkConnectionStatus();
+      await loadUserData(); // Reload user data including usernames
+    } finally {
       setRefreshing(false);
-    });
+    }
   };
 
   const showNotification = useCallback((type: 'success' | 'error', message: string) => {
@@ -425,8 +469,8 @@ export default function SettingsScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    setEditName(profileName);
-    setEditImage(profileImage);
+    setEditName(fullName);
+    // setEditImage(profileImage); // Commented out - profile image editing disabled
     setShowEditModal(true);
   };
 
@@ -471,11 +515,14 @@ export default function SettingsScreen() {
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.log('❌ Update User Detail Response Error:', errorText);
         throw new Error(errorText || 'Failed to update profile');
       }
 
       const data = await response.json();
-      console.log('Profile updated successfully:', data);
+      console.log('✅ Update User Detail Response - Full Data:', JSON.stringify(data, null, 2));
+      console.log('Update User Detail Response - Status:', response.status);
+      console.log('Update User Detail Response - Data Keys:', Object.keys(data));
 
       // Update local state
       setProfileName(editName.trim());
@@ -484,9 +531,8 @@ export default function SettingsScreen() {
       // Update AsyncStorage
       await AsyncStorage.setItem('fullName', editName.trim());
 
-      // TODO: Implement profile image update in future
-      // For now, just update the local state
-      setProfileImage(editImage);
+      // Profile image updates are disabled - image comes from Instagram connection only
+      // setProfileImage(editImage); // Commented out
 
       setShowEditModal(false);
       showNotification('success', 'Profile updated successfully!');
@@ -499,6 +545,10 @@ export default function SettingsScreen() {
     }
   };
 
+  // PROFILE PICTURE EDITING DISABLED
+  // Profile picture now comes from Instagram connection during login
+  // Users cannot manually upload/change profile pictures
+  /*
   const handleChangeImage = async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -531,6 +581,7 @@ export default function SettingsScreen() {
       // 4. Save the returned image URL to AsyncStorage and state
     }
   };
+  */
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
@@ -610,7 +661,7 @@ export default function SettingsScreen() {
 
           <View style={styles.profileContent}>
             <Image
-              source={{ uri: profileImage }}
+              source={{ uri: profileImage, cache: 'reload' }}
               style={styles.profileImage}
             />
             <View style={styles.profileInfo}>
@@ -756,6 +807,9 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* PROFILE PICTURE EDITING DISABLED */}
+              {/* Profile picture comes from Instagram connection only */}
+              {/* 
               <View style={styles.editImageSection}>
                 <Image
                   source={{ uri: editImage }}
@@ -769,6 +823,7 @@ export default function SettingsScreen() {
                   <Text style={styles.changeImageText}>Change Image</Text>
                 </TouchableOpacity>
               </View>
+              */}
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Name</Text>

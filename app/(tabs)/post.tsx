@@ -17,6 +17,7 @@ import {
   AudioEncodingAndroid,
 } from 'expo-speech-recognition';
 import AnimatedWave from '@/components/AnimatedWave';
+import { useNotification } from '@/contexts/NotificationContext';
 
 const { width } = Dimensions.get('window');
 
@@ -209,6 +210,7 @@ const FEED_DATA = [
 
 export default function PostScreen() {
   const insets = useSafeAreaInsets();
+  const { showPostNotification, hidePostNotification } = useNotification();
   const [contentType, setContentType] = useState<'post' | 'reel' | 'story'>('post');
   const [postType, setPostType] = useState<'single' | 'carousel'>('single');
   // Commented out for future use - Title field related state
@@ -240,6 +242,7 @@ export default function PostScreen() {
   const [selectedPosts, setSelectedPosts] = useState<number[]>([]);
   const [confirmedPosts, setConfirmedPosts] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
   const [loadingText, setLoadingText] = useState('Uploading media...');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
@@ -267,7 +270,64 @@ export default function PostScreen() {
       }),
     ]).start(() => setNotification(null));
   };
+
+  const savePostState = async (state: 'posting' | 'failed', postData: any) => {
+    try {
+      await AsyncStorage.setItem('pendingPost', JSON.stringify({
+        state,
+        postData,
+        timestamp: new Date().toISOString(),
+      }));
+    } catch (error) {
+      console.log('Failed to save post state');
+    }
+  };
+
+  const clearPostState = async () => {
+    try {
+      await AsyncStorage.removeItem('pendingPost');
+    } catch (error) {
+      console.log('Failed to clear post state');
+    }
+  };
+
+  const retryFailedPost = async () => {
+    const pendingPostString = await AsyncStorage.getItem('pendingPost');
+    if (!pendingPostString) return;
+    
+    const pendingPost = JSON.parse(pendingPostString);
+    hidePostNotification();
+    await clearPostState();
+    
+    // Restore form data and resubmit
+    const postData = pendingPost.postData;
+    setContentType(postData.contentType);
+    setCaption(postData.caption);
+    setTags(postData.tags);
+    setScheduleDate(postData.scheduleDate ? new Date(postData.scheduleDate) : null);
+    setSelectedPlatforms(postData.selectedPlatforms);
+    showNotification('info', 'Retrying post submission...');
+    // Trigger submission
+    setTimeout(() => handleCreate(), 500);
+  };
   
+  const loadPendingPost = async () => {
+    try {
+      const pendingPostString = await AsyncStorage.getItem('pendingPost');
+      if (pendingPostString) {
+        const pendingPost = JSON.parse(pendingPostString);
+        if (pendingPost.state === 'posting') {
+          showPostNotification('posting', 'Post is still being processed...', retryFailedPost);
+        } else if (pendingPost.state === 'failed') {
+          showPostNotification('failed', 'Previous post failed. Tap to retry.', retryFailedPost);
+        }
+      }
+    } catch (error) {
+      console.log('Failed to load pending post');
+    }
+  };
+  
+
   // Loading text animation effect
   useEffect(() => {
     if (!isSubmitting) return;
@@ -335,11 +395,13 @@ export default function PostScreen() {
 
   useEffect(() => {
     fetchConnectedPlatforms();
+    loadPendingPost();
   }, [fetchConnectedPlatforms]);
 
   useFocusEffect(
     useCallback(() => {
       fetchConnectedPlatforms();
+      loadPendingPost();
     }, [fetchConnectedPlatforms])
   );
 
@@ -361,21 +423,53 @@ export default function PostScreen() {
     }
   }, [postType, contentType]);
 
-  // Speech recognition event listeners for mobile
+  // Speech recognition event listeners for mobile - REAL-TIME MODE
   useSpeechRecognitionEvent('result', (event) => {
+    console.log('📱 Mobile Speech Recognition Result:', {
+      transcript: event.results[0]?.transcript,
+      isFinal: (event.results[0] as any)?.isFinal,
+      resultsLength: event.results?.length,
+    });
+    
     // Commented out for future use - Title recording event handling
     // if (isRecordingTitle) {
     //   const transcript = event.results[0]?.transcript || '';
-    //   // Since interimResults is false, we only get final results
     //   if (transcript) {
-    //     setTitle(prev => prev + transcript + ' ');
+    //     // For real-time: replace from last known position to avoid duplicates
+    //     setTitle(prev => {
+    //       const baseText = prev.substring(0, lastResultIndexTitle.current);
+    //       return baseText + transcript;
+    //     });
+    //     // Update last index only when we get a final result (when isFinal exists and is true)
+    //     const resultData = event.results[0] as any;
+    //     if (resultData && resultData.isFinal === true) {
+    //       lastResultIndexTitle.current += transcript.length;
+    //     }
     //   }
     // } else 
     if (isRecordingCaption) {
       const transcript = event.results[0]?.transcript || '';
-      // Since interimResults is false, we only get final results
       if (transcript) {
-        setCaption(prev => prev + transcript + ' ');
+        // For real-time: replace from last known position to avoid duplicates
+        setCaption(prev => {
+          const baseText = prev.substring(0, lastResultIndexCaption.current);
+          const newText = baseText + transcript;
+          console.log('📝 Caption Update:', {
+            baseLength: baseText.length,
+            transcriptLength: transcript.length,
+            newTextLength: newText.length,
+            lastIndex: lastResultIndexCaption.current,
+          });
+          return newText;
+        });
+        
+        // Update last index only when we get a final result (when isFinal exists and is true)
+        // For expo-speech-recognition, check if isFinal property exists and is true
+        const resultData = event.results[0] as any;
+        if (resultData && resultData.isFinal === true) {
+          lastResultIndexCaption.current += transcript.length;
+          console.log('✅ Final result - Updated lastIndex to:', lastResultIndexCaption.current);
+        }
       }
     }
   });
@@ -448,19 +542,46 @@ export default function PostScreen() {
         recognitionCaption.current.lang = 'en';
 
         recognitionCaption.current.onresult = (event: any) => {
+          let interimTranscript = '';
           let finalTranscript = '';
 
-          // Only process new results since last index
+          // Process all results from the last known index
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
               finalTranscript += transcript + ' ';
+            } else {
+              // Interim results - show in real-time
+              interimTranscript += transcript;
             }
           }
 
-          if (finalTranscript) {
-            setCaption(prev => prev + finalTranscript);
-          }
+          console.log('🌐 Web Speech Recognition Result:', {
+            finalTranscript,
+            interimTranscript,
+            resultIndex: event.resultIndex,
+            resultsLength: event.results.length,
+          });
+
+          // Update caption with real-time text
+          setCaption(prev => {
+            // Get the base text up to the last final result
+            const baseText = prev.substring(0, lastResultIndexCaption.current);
+            
+            if (finalTranscript) {
+              // Add final transcript to base and update the last index
+              const newText = baseText + finalTranscript;
+              lastResultIndexCaption.current = newText.length;
+              console.log('✅ Web Final result - Updated lastIndex to:', lastResultIndexCaption.current);
+              return newText;
+            } else if (interimTranscript) {
+              // Show interim results in real-time without updating last index
+              console.log('⏳ Web Interim result - Showing:', interimTranscript);
+              return baseText + interimTranscript;
+            }
+            
+            return prev;
+          });
         };
         
         recognitionCaption.current.onstart = () => {
@@ -589,22 +710,24 @@ export default function PostScreen() {
             return;
           }
 
-          // iOS needs specific settings for reliable recognition
+          // Enable real-time transcription with interim results
           const options = {
             lang: Platform.OS === 'ios' ? 'en-US' : undefined,
-            interimResults: false,
+            interimResults: true, // Enable real-time interim results
             maxAlternatives: 1,
-            continuous: Platform.OS === 'ios' ? false : true,
+            continuous: true, // Keep listening continuously
             requiresOnDeviceRecognition: Platform.OS === 'ios' ? true : false,
             addsPunctuation: true,
             contextualStrings: [],
           };
           
+          console.log('🎙️ Starting mobile speech recognition with options:', options);
           await ExpoSpeechRecognitionModule.start(options);
           setIsRecordingCaption(true);
           lastResultIndexCaption.current = 0;
+          console.log('✅ Mobile speech recognition started successfully');
         } catch (error: any) {
-          console.error('Error starting speech recognition:', error);
+          console.error('❌ Error starting mobile speech recognition:', error);
           const errorMsg = error?.message || 'Failed to start voice recognition';
           showNotification('error', errorMsg);
           setIsRecordingCaption(false);
@@ -614,10 +737,12 @@ export default function PostScreen() {
         if (recognitionCaption.current) {
           try {
             lastResultIndexCaption.current = 0;
+            console.log('🎙️ Starting web speech recognition');
             recognitionCaption.current.start();
             setIsRecordingCaption(true);
+            console.log('✅ Web speech recognition started successfully');
           } catch (error: any) {
-            console.error('Error starting speech recognition:', error);
+            console.error('❌ Error starting web speech recognition:', error);
             showNotification('error', 'Failed to start voice recognition. Please try again.');
             setIsRecordingCaption(false);
           }
@@ -625,13 +750,17 @@ export default function PostScreen() {
       }
     } else {
       // Stop recording
+      console.log('⏹️ Stopping speech recognition');
       if (Platform.OS === 'web' && recognitionCaption.current) {
         recognitionCaption.current.stop();
+        console.log('✅ Web speech recognition stopped');
       } else if (Platform.OS !== 'web') {
         await ExpoSpeechRecognitionModule.stop();
+        console.log('✅ Mobile speech recognition stopped');
       }
       setIsRecordingCaption(false);
       lastResultIndexCaption.current = 0;
+      console.log('📝 Final caption length:', caption.length);
     }
   };
 
@@ -721,6 +850,13 @@ export default function PostScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     router.replace('/(tabs)/home');
+  };
+
+  const handleCloseLoader = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setShowLoader(false);
   };
 
   const handleToggle = (type: 'post' | 'reel' | 'story') => {
@@ -1028,9 +1164,27 @@ export default function PostScreen() {
     const pendingCleanups: string[] = [];
     let resolvedMimeType: string | null = null;
 
+    // Save post data for recovery
+    const postData = {
+      contentType,
+      postType,
+      caption,
+      tags,
+      scheduleDate: scheduleDate?.toISOString(),
+      selectedPlatforms,
+      uploadedVideos,
+      uploadedPhotos,
+      mediaOrder,
+    };
+
     try {
       setIsSubmitting(true);
+      setShowLoader(true);
       setLoadingText('Uploading media...');
+
+      // Save state as posting
+      await savePostState('posting', postData);
+      showPostNotification('posting', 'Posting in progress...', retryFailedPost);
 
       const storedUserId = await AsyncStorage.getItem('email');
       if (!storedUserId) {
@@ -1260,6 +1414,10 @@ export default function PostScreen() {
       
       showNotification('success', notificationMessage);
 
+      // Clear posting state and show success notification
+      await clearPostState();
+      showPostNotification('success', notificationMessage);
+
       // Commented out for future use - Reset title after successful submission
       // setTitle('');
       setCaption('');
@@ -1272,10 +1430,22 @@ export default function PostScreen() {
       setMediaOrder([]);
       setSelectedPlatforms([]);
     } catch (error) {
-      console.error('Failed to create post', error);
+      console.log('Failed to create post');
       const errorMessage = error instanceof Error ? error.message : 'We were unable to submit your post. Please try again.';
+      
+      // Check if it's a network error
+      const isNetworkError = error instanceof TypeError && error.message.includes('fetch');
+      const displayMessage = isNetworkError 
+        ? 'Network error. Your post will be retried automatically.' 
+        : errorMessage;
+      
+      // Save failed state for retry
+      await savePostState('failed', postData);
+      showPostNotification('failed', 'Post failed. Tap to retry.', retryFailedPost);
+      
       setIsSubmitting(false);
-      showNotification('error', errorMessage);
+      setShowLoader(false);
+      showNotification('error', displayMessage);
     } finally {
       if (pendingCleanups.length && Platform.OS !== 'web') {
         for (const cleanupUri of pendingCleanups) {
@@ -1283,6 +1453,7 @@ export default function PostScreen() {
         }
       }
       setIsSubmitting(false);
+      setShowLoader(false);
     }
   };
 
@@ -1356,7 +1527,7 @@ export default function PostScreen() {
             notification.type === 'info' && styles.notificationInfo,
             { 
               opacity: notificationOpacity,
-              top: insets.top + 16,
+              top: insets.top + 80,
             }
           ]}
         >
@@ -2140,8 +2311,17 @@ export default function PostScreen() {
       )}
 
       {/* Loading Overlay */}
-      {isSubmitting && (
+      {showLoader && (
         <View style={styles.loadingOverlay}>
+          <TouchableOpacity 
+            style={styles.loaderCloseButton}
+            onPress={handleCloseLoader}
+            activeOpacity={0.8}
+          >
+            <View style={styles.loaderCloseButtonInner}>
+              <X color="#ffffff" size={18} strokeWidth={2.5} />
+            </View>
+          </TouchableOpacity>
           <LinearGradient
             colors={['rgba(59, 130, 246, 0.1)', 'rgba(139, 92, 246, 0.1)', 'rgba(0, 0, 0, 0)']}
             style={StyleSheet.absoluteFill}
@@ -3247,6 +3427,76 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo-Bold',
     letterSpacing: -0.3,
   },
+  persistentNotification: {
+    position: 'absolute',
+    right: 16,
+    left: 16,
+    zIndex: 10000,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 9,
+  },
+  persistentNotificationPosting: {
+    backgroundColor: '#3b82f6',
+  },
+  persistentNotificationSuccess: {
+    backgroundColor: '#10b981',
+  },
+  persistentNotificationFailed: {
+    backgroundColor: '#ef4444',
+  },
+  persistentNotificationContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  persistentNotificationLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  persistentNotificationSpinner: {
+    marginRight: 0,
+  },
+  persistentNotificationIconSuccess: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  persistentNotificationIconError: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  persistentNotificationText: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 14,
+    fontFamily: 'Archivo-SemiBold',
+    letterSpacing: -0.2,
+    lineHeight: 18,
+  },
+  persistentNotificationClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
   notification: {
     position: 'absolute',
     right: 16,
@@ -3419,6 +3669,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 9999,
+  },
+  loaderCloseButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    zIndex: 10000,
+  },
+  loaderCloseButtonInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   loadingContent: {
     alignItems: 'center',

@@ -46,7 +46,14 @@ export default function SignInScreen() {
       }
 
       const data = await response.json();
-      console.log('Response data:', JSON.stringify(data, null, 2));
+      console.log('✅ Login Response - Full Data:', JSON.stringify(data, null, 2));
+      console.log('Login Response - Success:', data.success);
+      console.log('Login Response - User ID:', data.user?._id);
+      console.log('Login Response - Full Name:', data.user?.fullName);
+      console.log('Login Response - Instagram Profile URL:', data.user?.instagramProfileUrl);
+      console.log('Login Response - Total Followers:', data.user?.totalFollowers);
+      console.log('Login Response - Connected Usernames:', data.user?.connectedUsernames);
+      console.log('Login Response - Platform Analytics:', data.platformAnalyticsTotals);
       
       // Check success status from backend
       if (data.success === true && data.user && data.user._id) {
