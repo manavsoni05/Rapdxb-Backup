@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInp
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout, Sparkles, GripVertical } from 'lucide-react-native';
+import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout, Sparkles } from 'lucide-react-native';
 import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -23,7 +23,7 @@ const { width } = Dimensions.get('window');
 
 const CREATE_POST_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-post';
 const CREATE_REEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-reel';
-const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook-test/create-carousels';
+const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-carousels';
 const CREATE_STORY_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-story';
 const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
 const CAPTION_RECREATE_URL = 'https://n8n-production-0558.up.railway.app/webhook/captionRecreate';
@@ -873,7 +873,11 @@ export default function PostScreen() {
   };
 
   const swapMediaItems = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
+    if (fromIndex === toIndex) {
+      setActiveDragIndex(null);
+      setDropTargetIndex(null);
+      return;
+    }
     
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1482,14 +1486,10 @@ export default function PostScreen() {
         }
       }
       
-      // Show posted message briefly
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      showNotification('success', notificationMessage);
-
-      // Clear posting state and show success notification
+      // Clear posting state immediately and show success notification
       await clearPostState();
       showPostNotification('success', notificationMessage);
+      showNotification('success', notificationMessage);
 
       // Commented out for future use - Reset title after successful submission
       // setTitle('');
@@ -1887,51 +1887,51 @@ export default function PostScreen() {
                     const isDragging = activeDragIndex === index;
                     const isDropTarget = dropTargetIndex === index;
                     
+                    const handlePress = () => {
+                      if (!isCarouselMode || mediaOrder.length <= 1) return;
+                      
+                      // If currently in drag mode (another item is selected)
+                      if (activeDragIndex !== null && activeDragIndex !== index) {
+                        // This is the drop target - perform swap
+                        if (Platform.OS !== 'web') {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        }
+                        swapMediaItems(activeDragIndex, index);
+                        return;
+                      }
+                      
+                      // If this item is already selected, deselect it
+                      if (activeDragIndex === index) {
+                        setActiveDragIndex(null);
+                        setDropTargetIndex(null);
+                        return;
+                      }
+                    };
+                    
+                    const handleLongPress = () => {
+                      if (!isCarouselMode || mediaOrder.length <= 1) return;
+                      
+                      // Start drag mode
+                      if (Platform.OS !== 'web') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                      }
+                      setActiveDragIndex(index);
+                      setDropTargetIndex(null);
+                    };
+                    
                     return (
                       <Pressable
                         key={uri}
-                        onPressIn={() => {
-                          if (isCarouselMode && mediaOrder.length > 1) {
-                            if (Platform.OS !== 'web') {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            }
-                            setActiveDragIndex(index);
-                          }
-                        }}
-                        onPressOut={() => {
-                          if (activeDragIndex !== null && dropTargetIndex !== null && activeDragIndex !== dropTargetIndex) {
-                            swapMediaItems(activeDragIndex, dropTargetIndex);
-                          } else {
-                            setActiveDragIndex(null);
-                            setDropTargetIndex(null);
-                          }
-                        }}
-                        onHoverIn={() => {
-                          if (activeDragIndex !== null && activeDragIndex !== index) {
-                            setDropTargetIndex(index);
-                          }
-                        }}
+                        onPress={handlePress}
+                        onLongPress={handleLongPress}
+                        delayLongPress={1000}
                         style={[
                           styles.uploadedFileItem,
                           isDragging && styles.uploadedFileItemDragging,
                           isDropTarget && styles.uploadedFileItemDropTarget
                         ]}
                       >
-                        {isVideo ? (
-                          <View style={styles.uploadedFilePreview}>
-                            <Video color="#ffffff" size={24} strokeWidth={2} />
-                          </View>
-                        ) : (
-                          <Image source={{ uri }} style={styles.uploadedImage} />
-                        )}
-                        
-                        {isCarouselMode && mediaOrder.length > 1 && (
-                          <View style={styles.dragHandleOverlay} pointerEvents="none">
-                            <View style={styles.dragHandleIcon}>
-                              <GripVertical color="#ffffff" size={24} strokeWidth={2.5} />
-                            </View>
-                          </View>
-                        )}
+                        <Image source={{ uri }} style={styles.uploadedImage} />
                         
                         <TouchableOpacity
                           style={styles.uploadedRemoveButton}
