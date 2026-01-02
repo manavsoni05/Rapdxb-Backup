@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInput, Animated, Dimensions, RefreshControl, Image, Modal, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInput, Animated, Dimensions, RefreshControl, Image, Modal, Alert, ActivityIndicator, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +23,7 @@ const { width } = Dimensions.get('window');
 
 const CREATE_POST_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-post';
 const CREATE_REEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-reel';
-const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-carousel';
+const CREATE_CAROUSEL_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook-test/create-carousels';
 const CREATE_STORY_ENDPOINT = 'https://n8n-production-0558.up.railway.app/webhook/create-story';
 const CHECK_STATUS_URL = 'https://n8n-production-0558.up.railway.app/webhook/check-connection-status';
 const CAPTION_RECREATE_URL = 'https://n8n-production-0558.up.railway.app/webhook/captionRecreate';
@@ -242,8 +242,6 @@ export default function PostScreen() {
   const [selectedPosts, setSelectedPosts] = useState<number[]>([]);
   const [confirmedPosts, setConfirmedPosts] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showLoader, setShowLoader] = useState(false);
-  const [loadingText, setLoadingText] = useState('Uploading media...');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
   const [notification, setNotification] = useState<{type: 'error' | 'success' | 'info'; message: string} | null>(null);
@@ -252,7 +250,6 @@ export default function PostScreen() {
   const floatAnim1 = useRef(new Animated.Value(0)).current;
   const floatAnim2 = useRef(new Animated.Value(0)).current;
   const floatAnim3 = useRef(new Animated.Value(0)).current;
-  const spinValue = useRef(new Animated.Value(0)).current;
 
   const showNotification = (type: 'error' | 'success' | 'info', message: string) => {
     setNotification({ type, message });
@@ -328,37 +325,6 @@ export default function PostScreen() {
   };
   
 
-  // Loading text animation effect
-  useEffect(() => {
-    if (!isSubmitting) return;
-    
-    const textSequence = ['Uploading media...', 'Processing...', 'Almost done...'];
-    let currentIndex = 0;
-    
-    const interval = setInterval(() => {
-      currentIndex = (currentIndex + 1) % textSequence.length;
-      setLoadingText(textSequence[currentIndex]);
-    }, 2000);
-    
-    return () => clearInterval(interval);
-  }, [isSubmitting]);
-  
-  // Spinner animation effect
-  useEffect(() => {
-    if (!isSubmitting) {
-      spinValue.setValue(0);
-      return;
-    }
-    
-    Animated.loop(
-      Animated.timing(spinValue, {
-        toValue: 1,
-        duration: 1000,
-        useNativeDriver: true,
-        easing: (t) => t, // Linear easing
-      })
-    ).start();
-  }, [isSubmitting]);
   const sliderAnim = useRef(new Animated.Value(0)).current;
 
   const fetchConnectedPlatforms = useCallback(async () => {
@@ -397,13 +363,6 @@ export default function PostScreen() {
     fetchConnectedPlatforms();
     loadPendingPost();
   }, [fetchConnectedPlatforms]);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchConnectedPlatforms();
-      loadPendingPost();
-    }, [fetchConnectedPlatforms])
-  );
 
   // When switching to single post, keep only last photo and remove all videos
   useEffect(() => {
@@ -849,14 +808,7 @@ export default function PostScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    router.replace('/(tabs)/home');
-  };
-
-  const handleCloseLoader = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    setShowLoader(false);
+    router.back();
   };
 
   const handleToggle = (type: 'post' | 'reel' | 'story') => {
@@ -918,7 +870,9 @@ export default function PostScreen() {
     setMediaOrder(prev => prev.filter(item => item !== uri));
   };
 
-  const handleUploadFile = async (mediaType: 'photo' | 'video') => {
+
+
+  const handleUploadFile = async (mediaType: 'photo' | 'video' | 'mixed') => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -932,21 +886,84 @@ export default function PostScreen() {
     let mediaTypes = ImagePicker.MediaTypeOptions.Images;
     if (mediaType === 'video') {
       mediaTypes = ImagePicker.MediaTypeOptions.Videos;
+    } else if (mediaType === 'mixed') {
+      mediaTypes = ImagePicker.MediaTypeOptions.All;
     }
 
     // For single post, only allow one image selection
     const isSinglePost = contentType === 'post' && postType === 'single';
+    const isCarousel = contentType === 'post' && postType === 'carousel';
     const selectionLimit = isSinglePost ? 1 : 10;
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes,
-      allowsEditing: true,
+      allowsEditing: isSinglePost ? true : false,
       quality: 1,
       allowsMultipleSelection: !isSinglePost,
       selectionLimit: selectionLimit,
     });
 
     if (!result.canceled && result.assets && result.assets.length) {
+      // For carousel with mixed media, separate videos and photos
+      if (isCarousel && mediaType === 'mixed') {
+        const videoUris: string[] = [];
+        const photoUris: string[] = [];
+        
+        result.assets.forEach(asset => {
+          if (asset.uri) {
+            // Check if it's a video based on type or uri
+            const isVideo = asset.type === 'video' || 
+                          asset.uri.includes('.mp4') || 
+                          asset.uri.includes('.mov') || 
+                          asset.uri.includes('.avi') ||
+                          asset.uri.includes('.mkv') ||
+                          asset.uri.includes('.m4v');
+            
+            if (isVideo) {
+              if (!videoUris.includes(asset.uri)) {
+                videoUris.push(asset.uri);
+              }
+            } else {
+              if (!photoUris.includes(asset.uri)) {
+                photoUris.push(asset.uri);
+              }
+            }
+          }
+        });
+
+        // Update videos
+        if (videoUris.length > 0) {
+          setUploadedVideos(prev => {
+            const next = [...prev];
+            videoUris.forEach(uri => {
+              if (!next.includes(uri)) {
+                next.push(uri);
+              }
+            });
+            return next;
+          });
+        }
+
+        // Update photos
+        if (photoUris.length > 0) {
+          setUploadedPhotos(prev => {
+            const next = [...prev];
+            photoUris.forEach(uri => {
+              if (!next.includes(uri)) {
+                next.push(uri);
+              }
+            });
+            return next;
+          });
+        }
+
+        // Add all to media order
+        const allUris = [...videoUris, ...photoUris];
+        addMediaToOrder(allUris, 'append');
+        
+        return;
+      }
+
       const uris = result.assets.map(asset => asset.uri).filter(Boolean) as string[];
       const uniqueUris = Array.from(new Set(uris));
 
@@ -1179,8 +1196,6 @@ export default function PostScreen() {
 
     try {
       setIsSubmitting(true);
-      setShowLoader(true);
-      setLoadingText('Uploading media...');
 
       // Save state as posting
       await savePostState('posting', postData);
@@ -1204,6 +1219,9 @@ export default function PostScreen() {
         : 'none';
 
       const appendedMediaMeta: { index: number; uri: string; fileName: string; mimeType: string }[] = [];
+
+      // Check if this is a carousel to determine payload format
+      const isCarouselSubmission = contentType === 'post' && postType === 'carousel';
 
       if (combinedMediaUris.length) {
         for (let index = 0; index < combinedMediaUris.length; index++) {
@@ -1233,13 +1251,16 @@ export default function PostScreen() {
           appendedMediaMeta.push({ index, uri, fileName, mimeType });
         }
 
-        if (appendedMediaMeta.length) {
-          formData.append('mediaFileName', appendedMediaMeta[0].fileName);
-          formData.append('mediaMimeType', appendedMediaMeta[0].mimeType);
-        }
-        if (appendedMediaMeta.length > 1) {
-          formData.append('mediaCount', String(appendedMediaMeta.length));
-          formData.append('carouselMediaMeta', JSON.stringify(appendedMediaMeta));
+        // For non-carousel posts, add legacy fields
+        if (!isCarouselSubmission) {
+          if (appendedMediaMeta.length) {
+            formData.append('mediaFileName', appendedMediaMeta[0].fileName);
+            formData.append('mediaMimeType', appendedMediaMeta[0].mimeType);
+          }
+          if (appendedMediaMeta.length > 1) {
+            formData.append('mediaCount', String(appendedMediaMeta.length));
+            formData.append('carouselMediaMeta', JSON.stringify(appendedMediaMeta));
+          }
         }
       }
 
@@ -1302,45 +1323,70 @@ export default function PostScreen() {
         ];
       }
 
-      formData.append('titlePromt', JSON.stringify(titlePromptPayload));
-      if (captionPromptPayload) {
-        formData.append('captionPromt', caption.trim());
-      }
-      formData.append('max_tokens', '1024');
-      formData.append('email', storedUserId);
-      
-      // Append tags array for backend processing (not for story)
-      if (tags.length > 0 && contentType !== 'story') {
-        tags.forEach((tag) => {
-          formData.append('tags', `@${tag}`);
-        });
-      }
-      
-      // Add schedule information
-      if (scheduleDate) {
-        const scheduledFor = scheduleDate.toISOString().slice(0, 19);
-        formData.append('scheduledFor', scheduledFor);
-        formData.append('publishnow', 'false');
-      } else {
-        formData.append('publishnow', 'true');
-      }
-      
-      // Append each platform individually to create an array (using 'Platforms' to match backend)
-      // Filter platforms: carousel only Instagram, reels/posts allow all
-      const isCarouselSubmission = contentType === 'post' && postType === 'carousel';
-      const disabledPlatformsForSubmission = isCarouselSubmission ? ['youtube', 'tiktok', 'snapchat', 'twitter', 'facebook'] : [];
-      const filteredPlatforms = selectedPlatforms.filter(p => !disabledPlatformsForSubmission.includes(p));
-      const platformsToSend = filteredPlatforms.length == 1 ? [...filteredPlatforms,  ''] : filteredPlatforms
-      platformsToSend.forEach((platform) => {
-        formData.append('Platforms', platform);
-      });
-
+      // Check if this is a carousel to use different payload format
       const shouldUseCarousel = contentType === 'post' && postType === 'carousel';
 
-      formData.append('isReel', shouldUseReel ? 'true' : 'false');
-      formData.append('isCarousel', shouldUseCarousel ? 'true' : 'false');
       if (shouldUseCarousel) {
-        formData.append('carouselOrder', JSON.stringify(appendedMediaMeta.map(item => item.index)));
+        // New carousel API format
+        formData.append('captionPromt', caption.trim());
+        formData.append('max_tokens', '1024');
+        formData.append('isReel', 'false');
+        formData.append('email', storedUserId);
+        
+        // Append userTags (only first platform for carousel - Instagram)
+        if (tags.length > 0) {
+          tags.forEach((tag) => {
+            formData.append('userTags', `@${tag}`);
+          });
+        }
+        
+        // Append platform (carousel only supports Instagram)
+        const carouselPlatform = selectedPlatforms.includes('instagram') ? 'instagram' : (selectedPlatforms.length > 0 ? selectedPlatforms[0] : 'instagram');
+        formData.append('Platforms', carouselPlatform);
+        
+        // Add publishnow
+        if (scheduleDate) {
+          formData.append('publishnow', 'false');
+          const scheduledFor = scheduleDate.toISOString().slice(0, 19);
+          formData.append('scheduledFor', scheduledFor);
+        } else {
+          formData.append('publishnow', 'true');
+        }
+      } else {
+        // Original format for non-carousel posts
+        formData.append('titlePromt', JSON.stringify(titlePromptPayload));
+        if (captionPromptPayload) {
+          formData.append('captionPromt', caption.trim());
+        }
+        formData.append('max_tokens', '1024');
+        formData.append('email', storedUserId);
+        
+        // Append tags array for backend processing (not for story)
+        if (tags.length > 0 && contentType !== 'story') {
+          tags.forEach((tag) => {
+            formData.append('tags', `@${tag}`);
+          });
+        }
+        
+        // Add schedule information
+        if (scheduleDate) {
+          const scheduledFor = scheduleDate.toISOString().slice(0, 19);
+          formData.append('scheduledFor', scheduledFor);
+          formData.append('publishnow', 'false');
+        } else {
+          formData.append('publishnow', 'true');
+        }
+        
+        // Append each platform individually to create an array (using 'Platforms' to match backend)
+        const disabledPlatformsForSubmission: string[] = [];
+        const filteredPlatforms = selectedPlatforms.filter(p => !disabledPlatformsForSubmission.includes(p));
+        const platformsToSend = filteredPlatforms.length == 1 ? [...filteredPlatforms,  ''] : filteredPlatforms
+        platformsToSend.forEach((platform) => {
+          formData.append('Platforms', platform);
+        });
+
+        formData.append('isReel', shouldUseReel ? 'true' : 'false');
+        formData.append('isCarousel', 'false');
       }
       
       // Add bannerId for story
@@ -1408,8 +1454,7 @@ export default function PostScreen() {
         }
       }
       
-      // Show posted message briefly before hiding loading
-      setLoadingText('Posted!');
+      // Show posted message briefly
       await new Promise(resolve => setTimeout(resolve, 800));
       
       showNotification('success', notificationMessage);
@@ -1444,7 +1489,6 @@ export default function PostScreen() {
       showPostNotification('failed', 'Post failed. Tap to retry.', retryFailedPost);
       
       setIsSubmitting(false);
-      setShowLoader(false);
       showNotification('error', displayMessage);
     } finally {
       if (pendingCleanups.length && Platform.OS !== 'web') {
@@ -1453,7 +1497,6 @@ export default function PostScreen() {
         }
       }
       setIsSubmitting(false);
-      setShowLoader(false);
     }
   };
 
@@ -1715,16 +1758,17 @@ export default function PostScreen() {
               </View>
               {contentType === 'post' ? (
                 <View style={styles.uploadButtonsContainer}>
-                  {postType === 'carousel' && (
-                    <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
-                      <Video color="#000000" size={20} strokeWidth={2.5} />
-                      <Text style={styles.uploadButtonText}>Upload Video</Text>
+                  {postType === 'carousel' ? (
+                    <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('mixed')}>
+                      <Upload color="#000000" size={20} strokeWidth={2.5} />
+                      <Text style={styles.uploadButtonText}>Select Media (up to 10)</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('photo')}>
+                      <ImageIcon color="#000000" size={20} strokeWidth={2.5} />
+                      <Text style={styles.uploadButtonText}>Upload Photo (1 only)</Text>
                     </TouchableOpacity>
                   )}
-                  <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('photo')}>
-                    <ImageIcon color="#000000" size={20} strokeWidth={2.5} />
-                    <Text style={styles.uploadButtonText}>{postType === 'single' ? 'Upload Photo (1 only)' : 'Upload Photo'}</Text>
-                  </TouchableOpacity>
                 </View>
               ) : contentType === 'reel' ? (
                 <TouchableOpacity activeOpacity={0.7} style={styles.uploadButton} onPress={() => handleUploadFile('video')}>
@@ -1809,46 +1853,43 @@ export default function PostScreen() {
               ))}
               {(uploadedVideos.length > 0 || uploadedPhotos.length > 0) && (
                 <View style={styles.uploadedFilesContainer}>
-                  {uploadedVideos.map((uri) => (
-                    <View key={uri} style={styles.uploadedFileItem}>
-                      <View style={styles.uploadedFilePreview}>
-                        <Video color="#ffffff" size={24} strokeWidth={2} />
+                  {mediaOrder.map((uri, index) => {
+                    const isVideo = uploadedVideos.includes(uri);
+                    
+                    return (
+                      <View
+                        key={uri}
+                        style={styles.uploadedFileItem}
+                      >
+                        {isVideo ? (
+                          <View style={styles.uploadedFilePreview}>
+                            <Video color="#ffffff" size={24} strokeWidth={2} />
+                          </View>
+                        ) : (
+                          <Image source={{ uri }} style={styles.uploadedImage} />
+                        )}
+                        
+                        <TouchableOpacity
+                          style={styles.uploadedRemoveButton}
+                          onPress={() => {
+                            if (Platform.OS !== 'web') {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            }
+                            if (isVideo) {
+                              setUploadedVideos(prev => prev.filter(item => item !== uri));
+                            } else {
+                              setUploadedPhotos(prev => prev.filter(item => item !== uri));
+                            }
+                            removeMediaFromOrder(uri);
+                          }}
+                          activeOpacity={0.7}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <X color="#ffffff" size={18} strokeWidth={2.5} />
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity
-                        style={styles.uploadedRemoveButton}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          }
-                          setUploadedVideos(prev => prev.filter(item => item !== uri));
-                          removeMediaFromOrder(uri);
-                        }}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <X color="#ffffff" size={18} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                  {uploadedPhotos.map((uri) => (
-                    <View key={uri} style={styles.uploadedFileItem}>
-                      <Image source={{ uri }} style={styles.uploadedImage} />
-                      <TouchableOpacity
-                        style={styles.uploadedRemoveButton}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          }
-                          setUploadedPhotos(prev => prev.filter(item => item !== uri));
-                          removeMediaFromOrder(uri);
-                        }}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <X color="#ffffff" size={18} strokeWidth={2.5} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
             </View>
@@ -2308,44 +2349,6 @@ export default function PostScreen() {
           display="default"
           onChange={handleTimeChange}
         />
-      )}
-
-      {/* Loading Overlay */}
-      {showLoader && (
-        <View style={styles.loadingOverlay}>
-          <TouchableOpacity 
-            style={styles.loaderCloseButton}
-            onPress={handleCloseLoader}
-            activeOpacity={0.8}
-          >
-            <View style={styles.loaderCloseButtonInner}>
-              <X color="#ffffff" size={18} strokeWidth={2.5} />
-            </View>
-          </TouchableOpacity>
-          <LinearGradient
-            colors={['rgba(59, 130, 246, 0.1)', 'rgba(139, 92, 246, 0.1)', 'rgba(0, 0, 0, 0)']}
-            style={StyleSheet.absoluteFill}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-          />
-          <View style={styles.loadingContent}>
-            <Animated.View
-              style={[
-                styles.loadingSpinner,
-                {
-                  transform: [{
-                    rotate: spinValue.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0deg', '360deg'],
-                    }),
-                  }],
-                },
-              ]}
-            />
-            <Text style={styles.loadingTitle}>Hang tight!</Text>
-            <Text style={styles.loadingText}>{loadingText}</Text>
-          </View>
-        </View>
       )}
 
     </View>
@@ -3107,7 +3110,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: 'visible',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.5)',
   },
@@ -3117,18 +3120,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 14,
   },
   uploadedImage: {
     width: '100%',
     height: '100%',
+    borderRadius: 14,
   },
   uploadedRemoveButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 12,
+    top: -8,
+    right: -8,
+    backgroundColor: 'rgba(239, 68, 68, 0.95)',
+    borderRadius: 14,
     padding: 6,
+    zIndex: 10,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   modalContainer: {
     flex: 1,
@@ -3661,54 +3672,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: 'Archivo-Bold',
     color: '#ffffff',
-    letterSpacing: -0.3,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 9999,
-  },
-  loaderCloseButton: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    zIndex: 10000,
-  },
-  loaderCloseButtonInner: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  loadingContent: {
-    alignItems: 'center',
-    gap: 24,
-  },
-  loadingSpinner: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 4,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderTopColor: '#3b82f6',
-  },
-  loadingTitle: {
-    fontSize: 28,
-    fontFamily: 'Archivo-Bold',
-    color: '#ffffff',
-    letterSpacing: -0.5,
-    marginTop: 8,
-  },
-  loadingText: {
-    fontSize: 16,
-    fontFamily: 'Archivo-Medium',
-    color: 'rgba(255, 255, 255, 0.7)',
     letterSpacing: -0.3,
   },
 });

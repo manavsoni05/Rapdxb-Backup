@@ -900,14 +900,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pageTitle: {
-    fontSize: 44,
+    fontSize: 32,
     fontFamily: 'Inter-Thin',
     color: '#ffffff',
     letterSpacing: -1.2,
     lineHeight: 50,
   },
   pageTitleBold: {
-    fontSize: 44,
+    fontSize: 32,
     fontFamily: 'Archivo-Bold',
     color: '#60a5fa',
     letterSpacing: -1.2,

@@ -165,7 +165,8 @@ export default function FeedScreen() {
           {messages.length === 0 ? (
             <View style={styles.welcomeContainer}>
               <Text style={styles.welcomeText}>
-                Hi, {fullName}
+                <Text style={styles.welcomeHi}>Hi, </Text>
+                <Text style={styles.welcomeName}>{fullName}</Text>
               </Text>
               <Text style={styles.welcomeSubtext}>
                 How may I help you?
@@ -385,11 +386,17 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     fontSize: 32,
-    fontFamily: 'Archivo-Bold',
-    color: '#ffffff',
     textAlign: 'center',
     letterSpacing: -0.5,
     marginBottom: 8,
+  },
+  welcomeHi: {
+    fontFamily: 'Inter-Thin',
+    color: '#ffffff',
+  },
+  welcomeName: {
+    fontFamily: 'Archivo-Bold',
+    color: '#e97b1cff',
   },
   welcomeSubtext: {
     fontSize: 18,
@@ -491,7 +498,6 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
     paddingVertical: 4,
     maxHeight: 100,
-    outlineStyle: 'none',
   },
   sendButton: {
     width: 44,
