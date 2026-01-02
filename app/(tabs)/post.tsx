@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInp
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout, Sparkles } from 'lucide-react-native';
+import { ArrowLeft, Upload, Calendar, X, Image as ImageIcon, Video, Check, Plus, Globe, Mic, Square, Maximize2, Layout, Sparkles, GripVertical } from 'lucide-react-native';
 import Svg, { Circle, Defs, RadialGradient as SvgRadialGradient, Stop } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -226,6 +226,8 @@ export default function PostScreen() {
   const [uploadedVideos, setUploadedVideos] = useState<string[]>([]);
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [mediaOrder, setMediaOrder] = useState<string[]>([]);
+  const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   // Commented out for future use - Title recording related states
   // const [isRecordingTitle, setIsRecordingTitle] = useState(false);
   const [isRecordingCaption, setIsRecordingCaption] = useState(false);
@@ -870,7 +872,36 @@ export default function PostScreen() {
     setMediaOrder(prev => prev.filter(item => item !== uri));
   };
 
+  const swapMediaItems = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+    
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
 
+    const updatedOrder = [...mediaOrder];
+    const [movedItem] = updatedOrder.splice(fromIndex, 1);
+    updatedOrder.splice(toIndex, 0, movedItem);
+    
+    setMediaOrder(updatedOrder);
+    
+    // Update individual arrays based on new order
+    const newVideos: string[] = [];
+    const newPhotos: string[] = [];
+    
+    updatedOrder.forEach(uri => {
+      if (uploadedVideos.includes(uri)) {
+        newVideos.push(uri);
+      } else if (uploadedPhotos.includes(uri)) {
+        newPhotos.push(uri);
+      }
+    });
+    
+    setUploadedVideos(newVideos);
+    setUploadedPhotos(newPhotos);
+    setActiveDragIndex(null);
+    setDropTargetIndex(null);
+  };
 
   const handleUploadFile = async (mediaType: 'photo' | 'video' | 'mixed') => {
     if (Platform.OS !== 'web') {
@@ -1220,9 +1251,6 @@ export default function PostScreen() {
 
       const appendedMediaMeta: { index: number; uri: string; fileName: string; mimeType: string }[] = [];
 
-      // Check if this is a carousel to determine payload format
-      const isCarouselSubmission = contentType === 'post' && postType === 'carousel';
-
       if (combinedMediaUris.length) {
         for (let index = 0; index < combinedMediaUris.length; index++) {
           const uri = combinedMediaUris[index];
@@ -1251,16 +1279,13 @@ export default function PostScreen() {
           appendedMediaMeta.push({ index, uri, fileName, mimeType });
         }
 
-        // For non-carousel posts, add legacy fields
-        if (!isCarouselSubmission) {
-          if (appendedMediaMeta.length) {
-            formData.append('mediaFileName', appendedMediaMeta[0].fileName);
-            formData.append('mediaMimeType', appendedMediaMeta[0].mimeType);
-          }
-          if (appendedMediaMeta.length > 1) {
-            formData.append('mediaCount', String(appendedMediaMeta.length));
-            formData.append('carouselMediaMeta', JSON.stringify(appendedMediaMeta));
-          }
+        if (appendedMediaMeta.length) {
+          formData.append('mediaFileName', appendedMediaMeta[0].fileName);
+          formData.append('mediaMimeType', appendedMediaMeta[0].mimeType);
+        }
+        if (appendedMediaMeta.length > 1) {
+          formData.append('mediaCount', String(appendedMediaMeta.length));
+          formData.append('carouselMediaMeta', JSON.stringify(appendedMediaMeta));
         }
       }
 
@@ -1323,37 +1348,38 @@ export default function PostScreen() {
         ];
       }
 
-      // Check if this is a carousel to use different payload format
       const shouldUseCarousel = contentType === 'post' && postType === 'carousel';
-
+      
+      // For carousel, use different field structure
       if (shouldUseCarousel) {
-        // New carousel API format
+        // Carousel API uses captionPromt directly (not JSON), userTags array, and single Platforms field
         formData.append('captionPromt', caption.trim());
         formData.append('max_tokens', '1024');
         formData.append('isReel', 'false');
         formData.append('email', storedUserId);
         
-        // Append userTags (only first platform for carousel - Instagram)
+        // Append tags as userTags array for carousel
         if (tags.length > 0) {
           tags.forEach((tag) => {
             formData.append('userTags', `@${tag}`);
           });
         }
         
-        // Append platform (carousel only supports Instagram)
-        const carouselPlatform = selectedPlatforms.includes('instagram') ? 'instagram' : (selectedPlatforms.length > 0 ? selectedPlatforms[0] : 'instagram');
+        // For carousel, filter to only Instagram and send as singular Platforms field
+        const carouselPlatforms = selectedPlatforms.filter(p => p === 'instagram');
+        const carouselPlatform = carouselPlatforms.length > 0 ? carouselPlatforms[0] : 'instagram';
         formData.append('Platforms', carouselPlatform);
         
-        // Add publishnow
+        // Add schedule information for carousel
         if (scheduleDate) {
-          formData.append('publishnow', 'false');
           const scheduledFor = scheduleDate.toISOString().slice(0, 19);
           formData.append('scheduledFor', scheduledFor);
+          formData.append('publishnow', 'false');
         } else {
           formData.append('publishnow', 'true');
         }
       } else {
-        // Original format for non-carousel posts
+        // Non-carousel: use existing structure
         formData.append('titlePromt', JSON.stringify(titlePromptPayload));
         if (captionPromptPayload) {
           formData.append('captionPromt', caption.trim());
@@ -1378,13 +1404,15 @@ export default function PostScreen() {
         }
         
         // Append each platform individually to create an array (using 'Platforms' to match backend)
-        const disabledPlatformsForSubmission: string[] = [];
-        const filteredPlatforms = selectedPlatforms.filter(p => !disabledPlatformsForSubmission.includes(p));
+        const filteredPlatforms = selectedPlatforms;
         const platformsToSend = filteredPlatforms.length == 1 ? [...filteredPlatforms,  ''] : filteredPlatforms
         platformsToSend.forEach((platform) => {
           formData.append('Platforms', platform);
         });
+      }
 
+      // For non-carousel submissions, add isReel and isCarousel flags
+      if (!shouldUseCarousel) {
         formData.append('isReel', shouldUseReel ? 'true' : 'false');
         formData.append('isCarousel', 'false');
       }
@@ -1855,11 +1883,39 @@ export default function PostScreen() {
                 <View style={styles.uploadedFilesContainer}>
                   {mediaOrder.map((uri, index) => {
                     const isVideo = uploadedVideos.includes(uri);
+                    const isCarouselMode = contentType === 'post' && postType === 'carousel';
+                    const isDragging = activeDragIndex === index;
+                    const isDropTarget = dropTargetIndex === index;
                     
                     return (
-                      <View
+                      <Pressable
                         key={uri}
-                        style={styles.uploadedFileItem}
+                        onPressIn={() => {
+                          if (isCarouselMode && mediaOrder.length > 1) {
+                            if (Platform.OS !== 'web') {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            }
+                            setActiveDragIndex(index);
+                          }
+                        }}
+                        onPressOut={() => {
+                          if (activeDragIndex !== null && dropTargetIndex !== null && activeDragIndex !== dropTargetIndex) {
+                            swapMediaItems(activeDragIndex, dropTargetIndex);
+                          } else {
+                            setActiveDragIndex(null);
+                            setDropTargetIndex(null);
+                          }
+                        }}
+                        onHoverIn={() => {
+                          if (activeDragIndex !== null && activeDragIndex !== index) {
+                            setDropTargetIndex(index);
+                          }
+                        }}
+                        style={[
+                          styles.uploadedFileItem,
+                          isDragging && styles.uploadedFileItemDragging,
+                          isDropTarget && styles.uploadedFileItemDropTarget
+                        ]}
                       >
                         {isVideo ? (
                           <View style={styles.uploadedFilePreview}>
@@ -1867,6 +1923,14 @@ export default function PostScreen() {
                           </View>
                         ) : (
                           <Image source={{ uri }} style={styles.uploadedImage} />
+                        )}
+                        
+                        {isCarouselMode && mediaOrder.length > 1 && (
+                          <View style={styles.dragHandleOverlay} pointerEvents="none">
+                            <View style={styles.dragHandleIcon}>
+                              <GripVertical color="#ffffff" size={24} strokeWidth={2.5} />
+                            </View>
+                          </View>
                         )}
                         
                         <TouchableOpacity
@@ -1887,7 +1951,7 @@ export default function PostScreen() {
                         >
                           <X color="#ffffff" size={18} strokeWidth={2.5} />
                         </TouchableOpacity>
-                      </View>
+                      </Pressable>
                     );
                   })}
                 </View>
@@ -3138,6 +3202,45 @@ const styles = StyleSheet.create({
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  uploadedFileItemDragging: {
+    opacity: 0.6,
+    transform: [{ scale: 1.1 }],
+    borderColor: '#ec4899',
+    borderWidth: 3,
+    shadowColor: '#ec4899',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 1000,
+  },
+  uploadedFileItemDropTarget: {
+    borderColor: '#10b981',
+    borderWidth: 3,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  dragHandleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 14,
+    zIndex: 5,
+  },
+  dragHandleIcon: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    padding: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
     shadowRadius: 4,
     elevation: 5,
   },
