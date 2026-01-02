@@ -660,14 +660,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   greetingHello: {
-    fontSize: 30,
+    fontSize: 44,
     fontFamily: 'Inter-Thin',
     color: '#ffffff',
     letterSpacing: -1.2,
     lineHeight: 50,
   },
   greetingName: {
-    fontSize: 30,
+    fontSize: 44,
     fontFamily: 'Archivo-Bold',
     color: '#ffffff',
     letterSpacing: -1.2,

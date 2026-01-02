@@ -911,14 +911,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pageTitle: {
-    fontSize: 32,
+    fontSize: 44,
     fontFamily: 'Inter-Thin',
     color: '#ffffff',
     letterSpacing: -1.2,
     lineHeight: 50,
   },
   pageTitleBold: {
-    fontSize: 32,
+    fontSize: 44,
     fontFamily: 'Archivo-Bold',
     color: '#60a5fa',
     letterSpacing: -1.2,

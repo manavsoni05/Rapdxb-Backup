@@ -679,7 +679,7 @@ export default function PostScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    router.back();
+    router.replace('/(tabs)/home');
   };
 
   const handleToggle = (type: 'post' | 'reel' | 'story') => {
@@ -790,16 +790,17 @@ export default function PostScreen() {
       mediaTypes = ImagePicker.MediaTypeOptions.All;
     }
 
-    // For single post, only allow one image selection
+    // For single post and reel/story, only allow one media selection
     const isSinglePost = contentType === 'post' && postType === 'single';
     const isCarousel = contentType === 'post' && postType === 'carousel';
-    const selectionLimit = isSinglePost ? 1 : 10;
+    const isSingleMedia = isSinglePost || contentType === 'reel' || contentType === 'story';
+    const selectionLimit = isSingleMedia ? 1 : 10;
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes,
-      allowsEditing: isSinglePost ? true : false,
+      allowsEditing: isSingleMedia ? true : false,
       quality: 1,
-      allowsMultipleSelection: !isSinglePost,
+      allowsMultipleSelection: !isSingleMedia,
       selectionLimit: selectionLimit,
     });
 
@@ -1550,7 +1551,7 @@ export default function PostScreen() {
               left: sliderPosition,
             }]}>
               <LinearGradient
-                colors={contentType === 'post' ? ['#60a5fa', '#3b82f6'] : contentType === 'reel' ? ['#fbbf24', '#f59e0b'] : ['#ec4899', '#db2777']}
+                colors={['#60a5fa', '#3b82f6']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.toggleSliderInner}
@@ -1766,7 +1767,16 @@ export default function PostScreen() {
                           isDropTarget && styles.uploadedFileItemDropTarget
                         ]}
                       >
-                        <Image source={{ uri }} style={styles.uploadedImage} />
+                        {isVideo ? (
+                          <View style={styles.videoPreviewContainer}>
+                            <View style={styles.videoPlaceholder}>
+                              <Video color="#ffffff" size={32} strokeWidth={2} />
+                              <Text style={styles.videoPreviewText}>Video</Text>
+                            </View>
+                          </View>
+                        ) : (
+                          <Image source={{ uri }} style={styles.uploadedImage} />
+                        )}
                         
                         <TouchableOpacity
                           style={styles.uploadedRemoveButton}
@@ -2957,6 +2967,27 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 14,
+  },
+  videoPreviewContainer: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+    backgroundColor: '#1a1a1a',
+    overflow: 'hidden',
+  },
+  videoPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(96, 165, 250, 0.2)',
+  },
+  videoPreviewText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontFamily: 'Archivo-Bold',
+    marginTop: 4,
+    letterSpacing: -0.2,
   },
   uploadedRemoveButton: {
     position: 'absolute',
