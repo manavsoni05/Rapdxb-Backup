@@ -166,7 +166,7 @@ export default function TabLayout() {
       if (Platform.OS !== 'web') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
-      router.replace(`/(tabs)/${newTab}`);
+      router.replace(`/(tabs)/${newTab}` as any);
     }
   };
 
@@ -209,7 +209,6 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      initialRouteName="home"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -244,7 +243,6 @@ export default function TabLayout() {
         name="post"
         options={{
           tabBarIcon: () => <PostButton />,
-          unmountOnBlur: true,
         }}
       />
       <Tabs.Screen

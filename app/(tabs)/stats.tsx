@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -63,6 +63,7 @@ export default function StatsScreen() {
   const [connectedUsernames, setConnectedUsernames] = useState<any>({});
   const [platformFollowers, setPlatformFollowers] = useState<any>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState({
     instagram: false,
     youtube: false,
@@ -88,13 +89,39 @@ export default function StatsScreen() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const apiResponse = await response.json();
+        // API returns array with platforms data
+        const data = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse;
+        
+        // Extract connection status
+        const platforms = data.platforms || [];
+        const instagramConnected = platforms.some((p: any) => p.platform === 'instagram');
+        const youtubeConnected = platforms.some((p: any) => p.platform === 'youtube');
+        const tiktokConnected = platforms.some((p: any) => p.platform === 'tiktok');
         
         setConnectionStatus({
-          instagram: data.isInstagramConnect || false,
-          youtube: data.isYoutubeConnect || false,
-          tiktok: data.isTiktokConnect || false,
+          instagram: instagramConnected,
+          youtube: youtubeConnected,
+          tiktok: tiktokConnected,
         });
+        
+        // Extract usernames directly from API response
+        const usernames: any = {};
+        platforms.forEach((platform: any) => {
+          if (platform.platform === 'instagram') {
+            usernames.instagram = platform.username;
+          } else if (platform.platform === 'tiktok') {
+            usernames.tiktok = platform.username;
+          } else if (platform.platform === 'youtube') {
+            usernames.youtube = platform.username;
+          }
+        });
+        
+        setConnectedUsernames(usernames);
+        
+        // Store usernames in AsyncStorage
+        await AsyncStorage.setItem('connectedUsernames', JSON.stringify(usernames));
+        
         setIsLoading(false);
       }
     } catch (error) {
@@ -152,9 +179,21 @@ export default function StatsScreen() {
     setExpandedPlatform(expandedPlatform === platformName ? null : platformName);
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await Promise.all([
+      checkConnectionStatus(),
+      loadAnalyticsData()
+    ]);
+    setRefreshing(false);
+  };
+
   // Generate dynamic platform stats based on connected platforms
   const generatePlatformStats = () => {
-    const platforms = [];
+    const platforms: any[] = [];
     const platformConfig = {
       instagram: {
         name: 'Instagram',
@@ -226,6 +265,14 @@ export default function StatsScreen() {
         style={styles.scrollContainer}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor="#8b5cf6"
+            colors={['#8b5cf6']}
+          />
+        }
       >
         <View style={styles.header}>
           <TouchableOpacity

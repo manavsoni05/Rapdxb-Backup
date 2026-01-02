@@ -1,9 +1,9 @@
 import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, Image, TextInput, KeyboardAvoidingView, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Menu, ArrowUp, Bot, X, Plus, MessageSquare, Edit2, Trash2 } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Message {
@@ -13,10 +13,13 @@ interface Message {
   timestamp: Date;
 }
 
+const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
+const GROQ_API_URL = process.env.EXPO_PUBLIC_GROQ_API_URL || 'https://api.groq.com/openai/v1/chat/completions';
+
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
-  const [fullName, setFullName] = useState('RAPDXB');
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png');
+  const [fullName, setFullName] = useState('');
+  const [profileImage, setProfileImage] = useState(require('@/assets/images/avatar.png'));
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [showSidebar, setShowSidebar] = useState(false);
@@ -25,24 +28,33 @@ export default function FeedScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const sidebarAnim = useRef(new Animated.Value(-320)).current;
 
-  // Load user data
-  useEffect(() => {
-    const loadUserData = async () => {
-      try {
-        const storedFullName = await AsyncStorage.getItem('fullName');
-        if (storedFullName) {
-          setFullName(storedFullName);
+  // Load user data directly from AsyncStorage (real-time, no cache) - reloads on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      const loadUserData = async () => {
+        try {
+          const storedFullName = await AsyncStorage.getItem('fullName');
+          const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
+          
+          if (storedFullName) {
+            setFullName(storedFullName);
+          }
+          
+          // Check if Instagram is connected and has profile URL
+          if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
+            setProfileImage({ uri: storedProfileUrl });
+          } else {
+            // Use default avatar from assets if Instagram not connected
+            setProfileImage(require('@/assets/images/avatar.png'));
+          }
+        } catch (error) {
+          // Failed to load user data
         }
-        const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
-        if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
-          setProfileImage(storedProfileUrl);
-        }
-      } catch (error) {
-        console.error('Failed to load user data:', error);
-      }
-    };
-    loadUserData();
-  }, []);
+      };
+      
+      loadUserData();
+    }, [])
+  );
 
   const handleNewChat = () => {
     if (Platform.OS !== 'web') {
@@ -79,43 +91,87 @@ export default function FeedScreen() {
     }).start();
   }, [showSidebar]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!message.trim()) return;
 
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-    const newMessage: Message = {
+    const userMessage: Message = {
       id: Date.now(),
       text: message.trim(),
       isUser: true,
       timestamp: new Date(),
     };
 
-    setMessages([...messages, newMessage]);
+    const currentMessage = message.trim();
+    setMessages([...messages, userMessage]);
     setMessage('');
-
-    // Simulate bot response
-    setTimeout(() => {
-      const botMessage: Message = {
-        id: Date.now() + 1,
-        text: "I'm your AI assistant. How can I help you today?",
-        isUser: false,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, botMessage]);
-      
-      // Scroll to bottom after bot response
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }, 1000);
 
     // Scroll to bottom after sending
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
+
+    // Call Groq API for AI response
+    try {
+      const response = await fetch(GROQ_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-20b',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a helpful AI assistant for RAPDXB, a social media management platform. Help users with their questions about posting content, managing social media accounts, and general assistance.'
+            },
+            {
+              role: 'user',
+              content: currentMessage
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 1024,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const botResponse = data.choices?.[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+        
+        const botMessage: Message = {
+          id: Date.now() + 1,
+          text: botResponse,
+          isUser: false,
+          timestamp: new Date(),
+        };
+        
+        setMessages(prev => [...prev, botMessage]);
+        
+        // Scroll to bottom after bot response
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      } else {
+        throw new Error('Failed to get response');
+      }
+    } catch (error) {
+      const errorMessage: Message = {
+        id: Date.now() + 1,
+        text: "I'm having trouble connecting right now. Please try again.",
+        isUser: false,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
+      
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
   };
 
   const handleMenuPress = () => {
@@ -202,7 +258,7 @@ export default function FeedScreen() {
                   </View>
                   {msg.isUser && (
                     <Image
-                      source={{ uri: profileImage }}
+                      source={profileImage}
                       style={styles.userAvatar}
                     />
                   )}
@@ -385,21 +441,24 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   welcomeText: {
-    fontSize: 32,
-    textAlign: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    fontSize: 20,
     letterSpacing: -0.5,
-    marginBottom: 8,
+    marginBottom: 16,
   },
   welcomeHi: {
     fontFamily: 'Inter-Thin',
     color: '#ffffff',
+    fontSize: 20,
   },
   welcomeName: {
     fontFamily: 'Archivo-Bold',
     color: '#e97b1cff',
+    fontSize: 20,
   },
   welcomeSubtext: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'Inter-Regular',
     color: 'rgba(255, 255, 255, 0.6)',
     textAlign: 'center',

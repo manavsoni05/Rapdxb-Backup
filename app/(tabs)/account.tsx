@@ -19,7 +19,7 @@ const SETTINGS_OPTIONS = [
 
 export default function AccountScreen() {
   const insets = useSafeAreaInsets();
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
+  const [profileImage, setProfileImage] = useState<any>(require('@/assets/images/avatar.png')); // Default avatar from assets
   const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
   // const [uploading, setUploading] = useState(false); // Commented out - upload functionality disabled
   const [showConnectionModal, setShowConnectionModal] = useState(false);
@@ -47,10 +47,13 @@ export default function AccountScreen() {
         // Load profile image from AsyncStorage (set during login if Instagram is connected)
         const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
         if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
-          setProfileImage(storedProfileUrl);
+          setProfileImage({ uri: storedProfileUrl });
+        } else {
+          // Use default avatar from assets if Instagram not connected
+          setProfileImage(require('@/assets/images/avatar.png'));
         }
       } catch (error) {
-        console.error('Failed to load user data:', error);
+        // Failed to load user data
       }
     };
     loadUserData();
@@ -72,22 +75,22 @@ export default function AccountScreen() {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           },
-          body: JSON.stringify({
-            platform: 'instagram',
-            email: email
-          })
+          body: JSON.stringify({ email: email })
         });
         
         if (response.ok) {
-          const data = await response.json();
+          const apiResponse = await response.json();
+          // API returns array with platforms data
+          const data = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse;
+          const connectedPlatforms = data.platforms || [];
           
-          if (data.connected) {
-            setPlatforms(prevPlatforms =>
-              prevPlatforms.map(p =>
-                p.id === 'instagram' ? { ...p, connected: true } : p
-              )
-            );
-          }
+          // Update platform connection status
+          setPlatforms(prevPlatforms =>
+            prevPlatforms.map(platform => {
+              const isConnected = connectedPlatforms.some((p: any) => p.platform === platform.id);
+              return { ...platform, connected: isConnected };
+            })
+          );
         }
       } catch (error) {
         console.error('Error checking initial connection status:', error);
@@ -300,29 +303,33 @@ export default function AccountScreen() {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
-        body: JSON.stringify({
-          platform: 'instagram',
-          email: email
-        })
+        body: JSON.stringify({ email: email })
       });
       
       if (!response.ok) {
         throw new Error('Failed to check connection status');
       }
       
-      const data = await response.json();
+      const apiResponse = await response.json();
+      // API returns array with platforms data
+      const data = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse;
+      const connectedPlatforms = data.platforms || [];
       
-      if (data.connected) {
-        setPlatforms(prevPlatforms =>
-          prevPlatforms.map(p =>
-            p.id === 'instagram' ? { ...p, connected: true } : p
-          )
-        );
-        
+      // Update platform connection status
+      setPlatforms(prevPlatforms =>
+        prevPlatforms.map(platform => {
+          const isConnected = connectedPlatforms.some((p: any) => p.platform === platform.id);
+          return { ...platform, connected: isConnected };
+        })
+      );
+      
+      // Check if any platform was newly connected
+      const hasConnections = connectedPlatforms.length > 0;
+      if (hasConnections) {
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } else {
-          alert('Instagram connected successfully!');
+          alert('Platform connected successfully!');
         }
       }
     } catch (error) {
@@ -396,7 +403,7 @@ export default function AccountScreen() {
             {/* PROFILE PICTURE UPLOAD DISABLED - Image comes from Instagram connection */}
             <View style={styles.profileImageContainer}>
               <Image
-                source={{ uri: profileImage, cache: 'reload' }}
+                source={profileImage}
                 style={styles.profileImage}
               />
               {/* Camera overlay disabled */}

@@ -29,7 +29,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const [showEditModal, setShowEditModal] = useState(false);
   const [profileName, setProfileName] = useState('');
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
+  const [profileImage, setProfileImage] = useState<any>(require('@/assets/images/avatar.png')); // Default avatar from assets
   const [editName, setEditName] = useState('');
   // const [editImage, setEditImage] = useState('https://i.imgur.com/vhILBC1.png'); // Commented out - not used for editing anymore
   const [fullName, setFullName] = useState(''); // Default fallback
@@ -48,6 +48,7 @@ export default function SettingsScreen() {
   const notificationOpacity = useRef(new Animated.Value(0)).current;
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
+  // Fetch live connection status from API (NOT CACHED - always fresh)
   const checkConnectionStatus = useCallback(async () => {
     try {
       const email = await AsyncStorage.getItem('email');
@@ -66,12 +67,20 @@ export default function SettingsScreen() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const apiResponse = await response.json();
+        // API returns array with platforms data
+        const data = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse;
+        
+        // Extract connection status
+        const platforms = data.platforms || [];
+        const instagramConnected = platforms.some((p: any) => p.platform === 'instagram');
+        const youtubeConnected = platforms.some((p: any) => p.platform === 'youtube');
+        const tiktokConnected = platforms.some((p: any) => p.platform === 'tiktok');
         
         setConnectionStatus({
-          instagram: data.isInstagramConnect || false,
-          youtube: data.isYoutubeConnect || false,
-          tiktok: data.isTiktokConnect || false,
+          instagram: instagramConnected,
+          youtube: youtubeConnected,
+          tiktok: tiktokConnected,
         });
         
         // Extract platformCount from API response
@@ -79,23 +88,22 @@ export default function SettingsScreen() {
           setPlatformCount(data.platformCount);
         }
         
-        // Always reload usernames from AsyncStorage after connection check
-        try {
-          const storedUsernames = await AsyncStorage.getItem('connectedUsernames');
-          if (storedUsernames) {
-            const usernames = JSON.parse(storedUsernames);
-            // Ensure we have a valid object with proper keys
-            if (usernames && typeof usernames === 'object') {
-              setConnectedUsernames({
-                instagram: usernames.instagram || undefined,
-                tiktok: usernames.tiktok || undefined,
-                youtube: usernames.youtube || undefined,
-              });
-            }
+        // Extract usernames directly from API response
+        const usernames: {instagram?: string; tiktok?: string; youtube?: string} = {};
+        platforms.forEach((platform: any) => {
+          if (platform.platform === 'instagram') {
+            usernames.instagram = platform.username;
+          } else if (platform.platform === 'tiktok') {
+            usernames.tiktok = platform.username;
+          } else if (platform.platform === 'youtube') {
+            usernames.youtube = platform.username;
           }
-        } catch (parseError) {
-          // If parsing fails, just log and continue
-        }
+        });
+        
+        setConnectedUsernames(usernames);
+        
+        // Store usernames in AsyncStorage for other screens
+        await AsyncStorage.setItem('connectedUsernames', JSON.stringify(usernames));
       }
     } catch (error) {
       // Silently handle connection check errors
@@ -106,7 +114,7 @@ export default function SettingsScreen() {
     checkConnectionStatus();
   }, [checkConnectionStatus]);
 
-  // Fetch fullName, totalFollowers, and connectedUsernames from AsyncStorage
+  // Fetch live user data including usernames (NOT CACHED - always fresh from AsyncStorage)
   const loadUserData = useCallback(async () => {
     try {
       const storedFullName = await AsyncStorage.getItem('fullName');
@@ -146,7 +154,10 @@ export default function SettingsScreen() {
       // Load profile image from AsyncStorage (set during login if Instagram is connected)
       const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
       if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
-        setProfileImage(storedProfileUrl);
+        setProfileImage({ uri: storedProfileUrl });
+      } else {
+        // Use default avatar from assets if Instagram not connected
+        setProfileImage(require('@/assets/images/avatar.png'));
       }
 
       // Calculate total likes from all platforms
@@ -661,7 +672,7 @@ export default function SettingsScreen() {
 
           <View style={styles.profileContent}>
             <Image
-              source={{ uri: profileImage, cache: 'reload' }}
+              source={profileImage}
               style={styles.profileImage}
             />
             <View style={styles.profileInfo}>

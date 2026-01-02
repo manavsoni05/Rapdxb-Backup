@@ -10,6 +10,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { NotificationProvider } from '@/contexts/NotificationContext';
+import { UserProvider } from '@/contexts/UserContext';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -79,14 +80,16 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <NotificationProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="+not-found" />
-        </Stack>
-        <StatusBar style="light" />
-      </NotificationProvider>
+      <UserProvider>
+        <NotificationProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="+not-found" />
+          </Stack>
+          <StatusBar style="light" />
+        </NotificationProvider>
+      </UserProvider>
     </GestureHandlerRootView>
   );
 }

@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInput, Animated, Dimensions, RefreshControl, Image, Modal, Alert, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView, TextInput, Animated, Dimensions, RefreshControl, Image, Modal, Alert, ActivityIndicator, Pressable, AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -213,8 +213,6 @@ export default function PostScreen() {
   const { showPostNotification, hidePostNotification } = useNotification();
   const [contentType, setContentType] = useState<'post' | 'reel' | 'story'>('post');
   const [postType, setPostType] = useState<'single' | 'carousel'>('single');
-  // Commented out for future use - Title field related state
-  // const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
   const [scheduleDate, setScheduleDate] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -228,16 +226,10 @@ export default function PostScreen() {
   const [mediaOrder, setMediaOrder] = useState<string[]>([]);
   const [activeDragIndex, setActiveDragIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
-  // Commented out for future use - Title recording related states
-  // const [isRecordingTitle, setIsRecordingTitle] = useState(false);
   const [isRecordingCaption, setIsRecordingCaption] = useState(false);
   const [isRegeneratingCaption, setIsRegeneratingCaption] = useState(false);
-  // const recognitionTitle = useRef<any>(null);
   const recognitionCaption = useRef<any>(null);
-  // const lastResultIndexTitle = useRef<number>(0);
   const lastResultIndexCaption = useRef<number>(0);
-  // Commented out for future use - Story Style related state
-  // const [selectedBannerId, setSelectedBannerId] = useState('agXkA3Dw0zNEbW2VBY'); // Default
 
   const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -278,7 +270,7 @@ export default function PostScreen() {
         timestamp: new Date().toISOString(),
       }));
     } catch (error) {
-      console.log('Failed to save post state');
+      // Failed to save post state
     }
   };
 
@@ -286,7 +278,7 @@ export default function PostScreen() {
     try {
       await AsyncStorage.removeItem('pendingPost');
     } catch (error) {
-      console.log('Failed to clear post state');
+      // Failed to clear post state
     }
   };
 
@@ -322,7 +314,7 @@ export default function PostScreen() {
         }
       }
     } catch (error) {
-      console.log('Failed to load pending post');
+      // Failed to load pending post
     }
   };
   
@@ -347,17 +339,24 @@ export default function PostScreen() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        const apiResponse = await response.json();
+        // API returns array with platforms data
+        const data = Array.isArray(apiResponse) ? apiResponse[0] : apiResponse;
         
+        // Extract connected platforms
+        const platforms = data.platforms || [];
         const connected: string[] = [];
-        if (data.isInstagramConnect) connected.push('instagram');
-        if (data.isYoutubeConnect) connected.push('youtube');
-        if (data.isTiktokConnect) connected.push('tiktok');
+        
+        platforms.forEach((platform: any) => {
+          if (platform.platform === 'instagram' || platform.platform === 'youtube' || platform.platform === 'tiktok') {
+            connected.push(platform.platform);
+          }
+        });
         
         setConnectedPlatforms(connected);
       }
     } catch (error) {
-      console.error('Failed to fetch connected platforms', error);
+      // Failed to fetch connected platforms
     }
   }, []);
 
@@ -365,6 +364,60 @@ export default function PostScreen() {
     fetchConnectedPlatforms();
     loadPendingPost();
   }, [fetchConnectedPlatforms]);
+
+  // Save form state when app goes to background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // Save current form state when app goes to background
+        if (caption.trim() || uploadedPhotos.length > 0 || uploadedVideos.length > 0) {
+          try {
+            await AsyncStorage.setItem('draftPost', JSON.stringify({
+              contentType,
+              postType,
+              caption,
+              tags,
+              scheduleDate: scheduleDate?.toISOString(),
+              selectedPlatforms,
+              timestamp: new Date().toISOString(),
+            }));
+          } catch (error) {
+            // Failed to save draft
+          }
+        }
+      } else if (nextAppState === 'active') {
+        // Restore form state when app comes back
+        try {
+          const draftString = await AsyncStorage.getItem('draftPost');
+          if (draftString) {
+            const draft = JSON.parse(draftString);
+            const draftTime = new Date(draft.timestamp);
+            const now = new Date();
+            const hoursDiff = (now.getTime() - draftTime.getTime()) / (1000 * 60 * 60);
+            
+            // Only restore if draft is less than 24 hours old
+            if (hoursDiff < 24) {
+              setContentType(draft.contentType);
+              setPostType(draft.postType);
+              setCaption(draft.caption);
+              setTags(draft.tags);
+              setScheduleDate(draft.scheduleDate ? new Date(draft.scheduleDate) : null);
+              setSelectedPlatforms(draft.selectedPlatforms);
+            } else {
+              // Clear old draft
+              await AsyncStorage.removeItem('draftPost');
+            }
+          }
+        } catch (error) {
+          // Failed to restore draft
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [caption, uploadedPhotos, uploadedVideos, contentType, postType, tags, scheduleDate, selectedPlatforms]);
 
   // When switching to single post, keep only last photo and remove all videos
   useEffect(() => {
@@ -386,62 +439,25 @@ export default function PostScreen() {
 
   // Speech recognition event listeners for mobile - REAL-TIME MODE
   useSpeechRecognitionEvent('result', (event) => {
-    console.log('📱 Mobile Speech Recognition Result:', {
-      transcript: event.results[0]?.transcript,
-      isFinal: (event.results[0] as any)?.isFinal,
-      resultsLength: event.results?.length,
-    });
     
-    // Commented out for future use - Title recording event handling
-    // if (isRecordingTitle) {
-    //   const transcript = event.results[0]?.transcript || '';
-    //   if (transcript) {
-    //     // For real-time: replace from last known position to avoid duplicates
-    //     setTitle(prev => {
-    //       const baseText = prev.substring(0, lastResultIndexTitle.current);
-    //       return baseText + transcript;
-    //     });
-    //     // Update last index only when we get a final result (when isFinal exists and is true)
-    //     const resultData = event.results[0] as any;
-    //     if (resultData && resultData.isFinal === true) {
-    //       lastResultIndexTitle.current += transcript.length;
-    //     }
-    //   }
-    // } else 
     if (isRecordingCaption) {
       const transcript = event.results[0]?.transcript || '';
       if (transcript) {
-        // For real-time: replace from last known position to avoid duplicates
         setCaption(prev => {
           const baseText = prev.substring(0, lastResultIndexCaption.current);
           const newText = baseText + transcript;
-          console.log('📝 Caption Update:', {
-            baseLength: baseText.length,
-            transcriptLength: transcript.length,
-            newTextLength: newText.length,
-            lastIndex: lastResultIndexCaption.current,
-          });
           return newText;
         });
         
-        // Update last index only when we get a final result (when isFinal exists and is true)
-        // For expo-speech-recognition, check if isFinal property exists and is true
         const resultData = event.results[0] as any;
         if (resultData && resultData.isFinal === true) {
           lastResultIndexCaption.current += transcript.length;
-          console.log('✅ Final result - Updated lastIndex to:', lastResultIndexCaption.current);
         }
       }
     }
   });
 
   useSpeechRecognitionEvent('end', () => {
-    // Auto-stop when recognition ends
-    // Commented out for future use - Title recording end handling
-    // if (isRecordingTitle) {
-    //   setIsRecordingTitle(false);
-    //   lastResultIndexTitle.current = 0;
-    // }
     if (isRecordingCaption) {
       setIsRecordingCaption(false);
       lastResultIndexCaption.current = 0;
@@ -449,9 +465,7 @@ export default function PostScreen() {
   });
 
   useSpeechRecognitionEvent('error', (event) => {
-    console.error('Speech recognition error:', event.error);
     
-    // Handle specific error types
     if (event.error === 'language-not-supported') {
       showNotification('error', 'Speech recognition is not available in your language. Please check your device settings.');
     } else if (event.error === 'not-allowed') {
@@ -460,10 +474,7 @@ export default function PostScreen() {
       showNotification('error', 'Speech recognition failed. Please try again.');
     }
     
-    // Commented out for future use - Title recording error handling
-    // setIsRecordingTitle(false);
     setIsRecordingCaption(false);
-    // lastResultIndexTitle.current = 0;
     lastResultIndexCaption.current = 0;
   });
 
@@ -471,32 +482,6 @@ export default function PostScreen() {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
-        // Commented out for future use - Title recognition setup
-        // recognitionTitle.current = new SpeechRecognition();
-        // recognitionTitle.current.continuous = true;
-        // recognitionTitle.current.interimResults = true;
-        // recognitionTitle.current.lang = 'en';
-
-        // recognitionTitle.current.onresult = (event: any) => {
-        //   let finalTranscript = '';
-
-        //   // Only process new results since last index
-        //   for (let i = event.resultIndex; i < event.results.length; i++) {
-        //     const transcript = event.results[i][0].transcript;
-        //     if (event.results[i].isFinal) {
-        //       finalTranscript += transcript + ' ';
-        //     }
-        //   }
-
-        //   if (finalTranscript) {
-        //     setTitle(prev => prev + finalTranscript);
-        //   }
-        // };
-        
-        // recognitionTitle.current.onstart = () => {
-        //   lastResultIndexTitle.current = 0;
-        // };
-
         recognitionCaption.current = new SpeechRecognition();
         recognitionCaption.current.continuous = true;
         recognitionCaption.current.interimResults = true;
@@ -517,13 +502,6 @@ export default function PostScreen() {
             }
           }
 
-          console.log('🌐 Web Speech Recognition Result:', {
-            finalTranscript,
-            interimTranscript,
-            resultIndex: event.resultIndex,
-            resultsLength: event.results.length,
-          });
-
           // Update caption with real-time text
           setCaption(prev => {
             // Get the base text up to the last final result
@@ -533,11 +511,9 @@ export default function PostScreen() {
               // Add final transcript to base and update the last index
               const newText = baseText + finalTranscript;
               lastResultIndexCaption.current = newText.length;
-              console.log('✅ Web Final result - Updated lastIndex to:', lastResultIndexCaption.current);
               return newText;
             } else if (interimTranscript) {
               // Show interim results in real-time without updating last index
-              console.log('⏳ Web Interim result - Showing:', interimTranscript);
               return baseText + interimTranscript;
             }
             
@@ -552,94 +528,11 @@ export default function PostScreen() {
     }
 
     return () => {
-      // Commented out for future use - Title recognition cleanup
-      // if (recognitionTitle.current) {
-      //   recognitionTitle.current.stop();
-      // }
       if (recognitionCaption.current) {
         recognitionCaption.current.stop();
       }
     };
   }, []);
-
-  // Commented out for future use - toggleTitleRecording function
-  /*
-  const toggleTitleRecording = async () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-
-    if (!isRecordingTitle) {
-      // Stop caption recording if it's active
-      if (isRecordingCaption) {
-        if (Platform.OS === 'web' && recognitionCaption.current) {
-          recognitionCaption.current.stop();
-        } else if (Platform.OS !== 'web') {
-          await ExpoSpeechRecognitionModule.stop();
-        }
-        setIsRecordingCaption(false);
-      }
-
-      // For mobile platforms, request permission first
-      if (Platform.OS !== 'web') {
-        const hasPermission = await requestMicrophonePermission();
-        if (!hasPermission) {
-          return;
-        }
-
-        try {
-          const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-          if (!result.granted) {
-            Alert.alert('Permission Required', 'Microphone permission is required for voice input.');
-            return;
-          }
-
-          // iOS needs specific settings for reliable recognition
-          const options = {
-            lang: Platform.OS === 'ios' ? 'en-US' : undefined,
-            interimResults: false,
-            maxAlternatives: 1,
-            continuous: Platform.OS === 'ios' ? false : true,
-            requiresOnDeviceRecognition: Platform.OS === 'ios' ? true : false,
-            addsPunctuation: true,
-            contextualStrings: [],
-          };
-          
-          await ExpoSpeechRecognitionModule.start(options);
-          setIsRecordingTitle(true);
-          lastResultIndexTitle.current = 0;
-        } catch (error: any) {
-          console.error('Error starting speech recognition:', error);
-          const errorMsg = error?.message || 'Failed to start voice recognition';
-          showNotification('error', errorMsg);
-          setIsRecordingTitle(false);
-        }
-      } else {
-        // Web speech recognition
-        if (recognitionTitle.current) {
-          try {
-            lastResultIndexTitle.current = 0;
-            recognitionTitle.current.start();
-            setIsRecordingTitle(true);
-          } catch (error: any) {
-            console.error('Error starting speech recognition:', error);
-            showNotification('error', 'Failed to start voice recognition. Please try again.');
-            setIsRecordingTitle(false);
-          }
-        }
-      }
-    } else {
-      // Stop recording
-      if (Platform.OS === 'web' && recognitionTitle.current) {
-        recognitionTitle.current.stop();
-      } else if (Platform.OS !== 'web') {
-        await ExpoSpeechRecognitionModule.stop();
-      }
-      setIsRecordingTitle(false);
-      lastResultIndexTitle.current = 0;
-    }
-  };
-  */
 
   const toggleCaptionRecording = async () => {
     if (Platform.OS !== 'web') {
@@ -647,17 +540,6 @@ export default function PostScreen() {
     }
 
     if (!isRecordingCaption) {
-      // Commented out for future use - Stop title recording if it's active
-      // if (isRecordingTitle) {
-      //   if (Platform.OS === 'web' && recognitionTitle.current) {
-      //     recognitionTitle.current.stop();
-      //   } else if (Platform.OS !== 'web') {
-      //     await ExpoSpeechRecognitionModule.stop();
-      //   }
-      //   setIsRecordingTitle(false);
-      // }
-
-      // For mobile platforms, request permission first
       if (Platform.OS !== 'web') {
         const hasPermission = await requestMicrophonePermission();
         if (!hasPermission) {
@@ -671,24 +553,20 @@ export default function PostScreen() {
             return;
           }
 
-          // Enable real-time transcription with interim results
           const options = {
             lang: Platform.OS === 'ios' ? 'en-US' : undefined,
-            interimResults: true, // Enable real-time interim results
+            interimResults: true,
             maxAlternatives: 1,
-            continuous: true, // Keep listening continuously
+            continuous: true,
             requiresOnDeviceRecognition: Platform.OS === 'ios' ? true : false,
             addsPunctuation: true,
             contextualStrings: [],
           };
           
-          console.log('🎙️ Starting mobile speech recognition with options:', options);
           await ExpoSpeechRecognitionModule.start(options);
           setIsRecordingCaption(true);
           lastResultIndexCaption.current = 0;
-          console.log('✅ Mobile speech recognition started successfully');
         } catch (error: any) {
-          console.error('❌ Error starting mobile speech recognition:', error);
           const errorMsg = error?.message || 'Failed to start voice recognition';
           showNotification('error', errorMsg);
           setIsRecordingCaption(false);
@@ -698,12 +576,9 @@ export default function PostScreen() {
         if (recognitionCaption.current) {
           try {
             lastResultIndexCaption.current = 0;
-            console.log('🎙️ Starting web speech recognition');
             recognitionCaption.current.start();
             setIsRecordingCaption(true);
-            console.log('✅ Web speech recognition started successfully');
           } catch (error: any) {
-            console.error('❌ Error starting web speech recognition:', error);
             showNotification('error', 'Failed to start voice recognition. Please try again.');
             setIsRecordingCaption(false);
           }
@@ -711,17 +586,13 @@ export default function PostScreen() {
       }
     } else {
       // Stop recording
-      console.log('⏹️ Stopping speech recognition');
       if (Platform.OS === 'web' && recognitionCaption.current) {
         recognitionCaption.current.stop();
-        console.log('✅ Web speech recognition stopped');
       } else if (Platform.OS !== 'web') {
         await ExpoSpeechRecognitionModule.stop();
-        console.log('✅ Mobile speech recognition stopped');
       }
       setIsRecordingCaption(false);
       lastResultIndexCaption.current = 0;
-      console.log('📝 Final caption length:', caption.length);
     }
   };
 
@@ -754,7 +625,6 @@ export default function PostScreen() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Regenerated caption response:', data);
         // Response is an array, get first item, then content[0].text
         if (data && Array.isArray(data) && data[0]?.content?.[0]?.text) {
           setCaption(data[0].content[0].text);
@@ -766,7 +636,6 @@ export default function PostScreen() {
         showNotification('error', 'Failed to regenerate caption');
       }
     } catch (error) {
-      console.error('Error regenerating caption:', error);
       showNotification('error', 'An error occurred while regenerating caption');
     } finally {
       setIsRegeneratingCaption(false);
@@ -826,8 +695,6 @@ export default function PostScreen() {
     }).start();
 
     setContentType(type);
-    // Commented out for future use - Reset title on content type change
-    // setTitle('');
     setCaption('');
     setTags([]);
     setTagInput('');
@@ -835,8 +702,6 @@ export default function PostScreen() {
     setUploadedPhotos([]);
     setScheduleDate(null);
     setMediaOrder([]);
-    // Commented out for future use - Reset selectedBannerId on content type change
-    // setSelectedBannerId('agXkA3Dw0zNEbW2VBY'); // Reset to default
   };
 
   const handleAddTag = () => {
@@ -1207,12 +1072,6 @@ export default function PostScreen() {
       return;
     }
 
-    // Commented out for future use - Title validation
-    // if ((contentType === 'post' || contentType === 'story') && !title.trim()) {
-    //   showNotification('error', 'Title Required: Please enter a title for your post.');
-    //   return;
-    // }
-
     const pendingCleanups: string[] = [];
     let resolvedMimeType: string | null = null;
 
@@ -1307,7 +1166,6 @@ export default function PostScreen() {
 
       let titlePromptPayload, captionPromptPayload;
 
-      // Commented out for future use - Set default empty title for prompts
       const title = '';
 
       if (contentType === 'story') {
@@ -1423,8 +1281,6 @@ export default function PostScreen() {
       
       // Add bannerId for story
       if (contentType === 'story') {
-        // Commented out for future use - Add selectedBannerId for story
-        // formData.append('bannerId', selectedBannerId);
         formData.append('bannerId', 'agXkA3Dw0zNEbW2VBY'); // Use default banner
       }
 
@@ -1434,23 +1290,53 @@ export default function PostScreen() {
         ? CREATE_CAROUSEL_ENDPOINT
         : (shouldUseReel ? CREATE_REEL_ENDPOINT : CREATE_POST_ENDPOINT);
 
+      // Retry logic for network failures
+      let response;
+      let retryCount = 0;
+      const maxRetries = 3;
       
-
-      const response = await fetch(targetEndpoint, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage = 'Request failed. Please try again.';
+      while (retryCount < maxRetries) {
         try {
-          const errorJson = JSON.parse(errorText);
-          errorMessage = errorJson.message || errorJson.error || errorText;
-        } catch {
-          errorMessage = errorText || errorMessage;
+          response = await fetch(targetEndpoint, {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'Accept': 'application/json',
+            },
+          });
+          
+          // If successful, break out of retry loop
+          if (response.ok) {
+            break;
+          }
+          
+          // If response is not ok but we got a response, throw error
+          if (!response.ok) {
+            const errorText = await response.text();
+            let errorMessage = 'Request failed. Please try again.';
+            try {
+              const errorJson = JSON.parse(errorText);
+              errorMessage = errorJson.message || errorJson.error || errorText;
+            } catch {
+              errorMessage = errorText || errorMessage;
+            }
+            throw new Error(errorMessage);
+          }
+        } catch (fetchError) {
+          retryCount++;
+          
+          // If it's the last retry, throw the error
+          if (retryCount >= maxRetries) {
+            throw fetchError;
+          }
+          
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
-        throw new Error(errorMessage);
+      }
+
+      if (!response || !response.ok) {
+        throw new Error('Failed to submit post after multiple attempts');
       }
 
       let responseBody: any = null;
@@ -1488,11 +1374,9 @@ export default function PostScreen() {
       
       // Clear posting state immediately and show success notification
       await clearPostState();
+      await AsyncStorage.removeItem('draftPost'); // Clear draft on success
       showPostNotification('success', notificationMessage);
-      showNotification('success', notificationMessage);
 
-      // Commented out for future use - Reset title after successful submission
-      // setTitle('');
       setCaption('');
       setTags([]);
       setTagInput('');
@@ -1503,7 +1387,6 @@ export default function PostScreen() {
       setMediaOrder([]);
       setSelectedPlatforms([]);
     } catch (error) {
-      console.log('Failed to create post');
       const errorMessage = error instanceof Error ? error.message : 'We were unable to submit your post. Please try again.';
       
       // Check if it's a network error
@@ -1818,54 +1701,6 @@ export default function PostScreen() {
                     <Video color="#000000" size={20} strokeWidth={2.5} />
                     <Text style={styles.uploadButtonText}>Upload Video</Text>
                   </TouchableOpacity>
-                  
-                  {/* Commented out for future use - Story Style section */}
-                  {/* <View style={styles.storyStyleSection}>
-                    <Text style={styles.storyStyleHeading}>Story Style</Text>
-                    <View style={styles.bannerPillsContainer}>
-                      <TouchableOpacity 
-                        activeOpacity={0.7} 
-                        style={[styles.bannerPill, selectedBannerId === 'A37YJe5q03WXZmpvWK' && styles.bannerPillSelected]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          }
-                          setSelectedBannerId('A37YJe5q03WXZmpvWK');
-                        }}
-                      >
-                        <Square color={selectedBannerId === 'A37YJe5q03WXZmpvWK' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
-                        <Text style={[styles.bannerPillText, selectedBannerId === 'A37YJe5q03WXZmpvWK' && styles.bannerPillTextSelected]}>Square</Text>
-                      </TouchableOpacity>
-                      
-                      <TouchableOpacity 
-                        activeOpacity={0.7} 
-                        style={[styles.bannerPill, selectedBannerId === 'E9YaWrZMql3YZnRd74' && styles.bannerPillSelected]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          }
-                          setSelectedBannerId('E9YaWrZMql3YZnRd74');
-                        }}
-                      >
-                        <Maximize2 color={selectedBannerId === 'E9YaWrZMql3YZnRd74' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
-                        <Text style={[styles.bannerPillText, selectedBannerId === 'E9YaWrZMql3YZnRd74' && styles.bannerPillTextSelected]}>Portrait</Text>
-                      </TouchableOpacity>
-                      
-                      <TouchableOpacity 
-                        activeOpacity={0.7} 
-                        style={[styles.bannerPill, selectedBannerId === 'agXkA3Dw0zNEbW2VBY' && styles.bannerPillSelected]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          }
-                          setSelectedBannerId('agXkA3Dw0zNEbW2VBY');
-                        }}
-                      >
-                        <Layout color={selectedBannerId === 'agXkA3Dw0zNEbW2VBY' ? "#000000" : "rgba(0, 0, 0, 0.5)"} size={16} strokeWidth={2} strokeDasharray="2 2" />
-                        <Text style={[styles.bannerPillText, selectedBannerId === 'agXkA3Dw0zNEbW2VBY' && styles.bannerPillTextSelected]}>Default</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View> */}
                 </>
               ) : (
                 <View style={styles.uploadButtonsContainer}>
@@ -1957,71 +1792,7 @@ export default function PostScreen() {
                 </View>
               )}
             </View>
-
-            {/* Commented out for future use - Media Link section */}
-            {/* {contentType !== 'story' && (
-              <>
-                <View style={styles.dividerContainer}>
-                  <View style={styles.dividerLineDark} />
-                  <Text style={styles.dividerTextDark}>OR</Text>
-                  <View style={styles.dividerLineDark} />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.labelDark}>Paste Media Link</Text>
-                  <View style={styles.glassInputWrapperDark}>
-                    <TextInput
-                      style={styles.inputDark}
-                      placeholder="https://..."
-                      placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={false}
-                    />
-                  </View>
-                </View>
-              </>
-            )} */}
           </LinearGradient>
-
-          {/* Commented out for future use - Title field */}
-          {/* <LinearGradient
-            colors={['#fbbf24', '#f59e0b']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.inputCard}
-          >
-            <View style={styles.inputGroup}>
-              <View style={styles.labelRow}>
-                <Text style={styles.labelDark}>Title</Text>
-                <View style={styles.labelBadgeDark}>
-                  <Text style={styles.labelBadgeTextDark}>Required</Text>
-                </View>
-              </View>
-              <View style={styles.glassInputWrapperDark}>
-                <View style={styles.inputWithMicInside}>
-                  <TextInput
-                    style={styles.inputDarkWithMic}
-                    placeholder="Enter title..."
-                    placeholderTextColor="rgba(0, 0, 0, 0.4)"
-                    value={title}
-                    onChangeText={setTitle}
-                  />
-                  <TouchableOpacity
-                    onPress={toggleTitleRecording}
-                    activeOpacity={0.7}
-                    style={[styles.micButtonInside, isRecordingTitle && styles.micButtonActiveInside]}
-                  >
-                    {isRecordingTitle ? (
-                      <AnimatedWave size={18} color="#ffffff" />
-                    ) : (
-                      <Mic color={isRecordingTitle ? "#ffffff" : "#000000"} size={18} strokeWidth={2.5} />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          </LinearGradient> */}
 
           {contentType !== 'story' && (
             <LinearGradient
@@ -2230,14 +2001,10 @@ export default function PostScreen() {
           <TouchableOpacity
             style={[
               styles.createButtonWrapper,
-              // Commented out for future use - Title validation in button disabled condition
-              // (((contentType === 'post' || contentType === 'story') && !title) || isSubmitting) && styles.createButtonDisabled,
               isSubmitting && styles.createButtonDisabled,
             ]}
             onPress={handleCreate}
             activeOpacity={0.8}
-            // Commented out for future use - Title validation in button disabled prop
-            // disabled={isSubmitting || ((contentType === 'post' || contentType === 'story') && !title)}
             disabled={isSubmitting}
           >
             <LinearGradient

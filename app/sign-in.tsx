@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Lock, Mail } from 'lucide-react-native';
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LOGIN_API_URL = 'https://n8n-production-0558.up.railway.app/webhook/Login';
@@ -14,6 +14,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSignIn = async () => {
     if (!email || !password) {
@@ -133,11 +134,22 @@ export default function SignInScreen() {
               placeholderTextColor="rgba(255, 255, 255, 0.3)"
               value={password}
               onChangeText={setPassword}
-              secureTextEntry
+              secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!loading}
             />
+            <TouchableOpacity
+              style={styles.eyeIconWrapper}
+              onPress={() => setShowPassword(!showPassword)}
+              activeOpacity={0.7}
+            >
+              {showPassword ? (
+                <Eye color="rgba(255, 255, 255, 0.5)" size={20} strokeWidth={2} />
+              ) : (
+                <EyeOff color="rgba(255, 255, 255, 0.5)" size={20} strokeWidth={2} />
+              )}
+            </TouchableOpacity>
           </View>
 
           <TouchableOpacity
@@ -217,6 +229,10 @@ const styles = StyleSheet.create({
   },
   inputIconWrapper: {
     marginRight: 12,
+  },
+  eyeIconWrapper: {
+    marginLeft: 12,
+    padding: 4,
   },
   input: {
     flex: 1,

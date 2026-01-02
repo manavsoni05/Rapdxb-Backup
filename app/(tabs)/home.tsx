@@ -47,7 +47,7 @@ export default function HomeScreen() {
     { id: 3, text: 'Just Posted To Website', read: false, icon: 'website', time: '3h ago', color: '#10b981' },
   ]);
   const [fullName, setFullName] = useState('RAPDXB'); // Default fallback
-  const [profileImage, setProfileImage] = useState('https://i.imgur.com/vhILBC1.png'); // Static default image
+  const [profileImage, setProfileImage] = useState(require('@/assets/images/avatar.png')); // Default avatar from assets
   const [platformAnalytics, setPlatformAnalytics] = useState<any>({});
   const [totalFollowers, setTotalFollowers] = useState(0);
   const [totalLikes, setTotalLikes] = useState(0);
@@ -63,7 +63,10 @@ export default function HomeScreen() {
       // Load profile image from AsyncStorage (set during login if Instagram is connected)
       const storedProfileUrl = await AsyncStorage.getItem('instagramProfileUrl');
       if (storedProfileUrl && storedProfileUrl !== 'https://i.imgur.com/vhILBC1.png') {
-        setProfileImage(storedProfileUrl);
+        setProfileImage({ uri: storedProfileUrl });
+      } else {
+        // Use default avatar from assets if Instagram not connected
+        setProfileImage(require('@/assets/images/avatar.png'));
       }
 
       // Load total followers from AsyncStorage
@@ -88,14 +91,9 @@ export default function HomeScreen() {
         setTotalLikes(totalLikesCount);
       }
     } catch (error) {
-      console.error('Failed to load user data:', error);
+      // Failed to load user data
     }
   }, []);
-
-  // Fetch fullName from AsyncStorage on component mount
-  useEffect(() => {
-    loadUserName();
-  }, [loadUserName]);
 
   // Refresh fullName when screen comes into focus (e.g., when returning from settings)
   useFocusEffect(
@@ -253,7 +251,7 @@ export default function HomeScreen() {
             activeOpacity={0.6}
           >
             <Image
-              source={{ uri: profileImage, cache: 'reload' }}
+              source={profileImage}
               style={styles.profileImage}
             />
           </TouchableOpacity>
@@ -662,14 +660,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   greetingHello: {
-    fontSize: 32,
+    fontSize: 30,
     fontFamily: 'Inter-Thin',
     color: '#ffffff',
     letterSpacing: -1.2,
     lineHeight: 50,
   },
   greetingName: {
-    fontSize: 32,
+    fontSize: 30,
     fontFamily: 'Archivo-Bold',
     color: '#ffffff',
     letterSpacing: -1.2,
